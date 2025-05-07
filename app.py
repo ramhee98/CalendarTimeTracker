@@ -1,15 +1,11 @@
 import streamlit as st
 import pandas as pd
 import requests
-from io import StringIO
 from datetime import datetime, date
-import matplotlib.pyplot as plt
 import altair as alt
 import os
 import shutil
-from pandas import date_range, Period
 from calendar_store import update_event_store
-from urllib.parse import urlparse
 from ics import Calendar
 import calendar
 
@@ -20,12 +16,6 @@ def load_calendar_urls(file_path="calendars.txt"):
             for line in f
             if line.strip() and not line.strip().startswith("#")
         ]
-
-def extract_calendar_name(lines):
-    for line in lines:
-        if line.startswith("X-WR-CALNAME:"):
-            return line.replace("X-WR-CALNAME:", "").strip()
-    return "Unnamed"
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour (3600 seconds)
 def parse_ics_from_url(url):
@@ -101,10 +91,6 @@ if all_events:
     df["month"] = df["start"].dt.to_period("M")
     df["weekday"] = df["start"].dt.day_name()
     df["hour"] = df["start"].dt.hour
-
-    # Extract year options from event start times
-    df["year"] = df["start"].dt.year
-    available_years = sorted(df["year"].unique())
 
     # Add dropdown to select year
     min_date = df["start"].min().date()
