@@ -68,6 +68,45 @@ def parse_ics_from_url(url):
         st.error(f"Error loading {url}: {e}")
         return []
 
+def select_month_range(df):
+    min_date = df["start"].min().date()
+    max_date = df["start"].max().date()
+
+    years = list(range(min_date.year, max_date.year + 1))
+    months = list(range(1, 13))
+    now = datetime.now()
+
+    start_month_default = 1
+    end_month_default = 12
+    start_year_default = end_year_default = now.year
+
+    st.subheader("Select Month Range")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        start_month = st.selectbox("Start Month", months, index=start_month_default - 1, format_func=lambda m: calendar.month_name[m])
+    with col2:
+        start_year = st.selectbox("Start Year", years, index=years.index(start_year_default))
+    with col3:
+        end_month = st.selectbox("End Month", months, index=end_month_default - 1, format_func=lambda m: calendar.month_name[m])
+    with col4:
+        end_year = st.selectbox("End Year", years, index=years.index(end_year_default))
+
+    try:
+        start_date = date(start_year, start_month, 1)
+        end_day = calendar.monthrange(end_year, end_month)[1]
+        end_date = date(end_year, end_month, end_day)
+
+        if start_date > end_date:
+            st.warning("Start must be before end.")
+            st.stop()
+
+        return start_date, end_date
+
+    except Exception as e:
+        st.error(f"Invalid date range: {e}")
+        st.stop()
+
 # Copy sample file if calendars.txt doesn't exist
 if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"):
     shutil.copy("calendars.txt.sample", "calendars.txt")
@@ -92,46 +131,6 @@ if all_events:
     df["weekday"] = df["start"].dt.day_name()
     df["hour"] = df["start"].dt.hour
 
-    # Add dropdown to select year
-    min_date = df["start"].min().date()
-    max_date = df["start"].max().date()
-
-    years = list(range(min_date.year, max_date.year + 1))
-    months = list(range(1, 13))
-    now = datetime.now()
-    start_month_default = 1
-    end_month_default = 12
-    start_year_default = end_year_default = now.year
-
-    st.subheader("Select Month Range")
-
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        start_month = st.selectbox("Start Month", months, index=start_month_default - 1, format_func=lambda m: calendar.month_name[m])
-    with col2:
-        start_year = st.selectbox("Start Year", years, index=years.index(start_year_default))
-    with col3:
-        end_month = st.selectbox("End Month", months, index=end_month_default - 1, format_func=lambda m: calendar.month_name[m])
-    with col4:
-        end_year = st.selectbox("End Year", years, index=years.index(end_year_default))
-
-
-    # Convert to proper start/end dates
-    try:
-        start_date = date(start_year, start_month, 1)
-        end_day = calendar.monthrange(end_year, end_month)[1]
-        end_date = date(end_year, end_month, end_day)
-
-        if start_date > end_date:
-            st.warning("Start must be before end.")
-            st.stop()
-
-        df = df[(df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)]
-
-    except Exception as e:
-        st.error(f"Invalid date range: {e}")
-        st.stop()
-
     # Summary Table
     st.subheader("Summary Table")
     summary = df.groupby("calendar")["duration_hours"].agg(
@@ -143,6 +142,9 @@ if all_events:
 
     csv = summary.to_csv(index=False).encode("utf-8")
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
+
+    start_date, end_date = select_month_range(df)
+    df = df[(df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)]
 
     # Generate all months
     all_months = pd.date_range(start=start_date, end=end_date, freq="MS").to_period("M")
