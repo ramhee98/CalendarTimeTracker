@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import altair as alt
 import os
 import shutil
+from pandas import date_range, Period
 
 def load_calendar_urls(file_path="calendars.txt"):
     with open(file_path, "r", encoding="utf-8") as f:
@@ -111,9 +112,14 @@ if all_events:
     csv = summary.to_csv(index=False).encode("utf-8")
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
 
-    # Prepare data
-    monthly = df.groupby(["month", "calendar"])["duration_hours"].sum().reset_index()
+    # Generate all months
+    all_months = pd.date_range(f"{selected_year}-01-01", f"{selected_year}-12-01", freq="MS").to_period("M")
+    calendars = df["calendar"].unique()
+    full_index = pd.MultiIndex.from_product([all_months, calendars], names=["month", "calendar"])
+
+    monthly = df.groupby(["month", "calendar"])["duration_hours"].sum().reindex(full_index, fill_value=0).reset_index()
     monthly["month"] = monthly["month"].astype(str)
+
 
     # Altair chart with labeled axes
     st.subheader("Total Time per Month (Stacked by Calendar)")
