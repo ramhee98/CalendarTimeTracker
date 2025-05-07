@@ -107,6 +107,18 @@ def select_month_range(df):
         st.error(f"Invalid date range: {e}")
         st.stop()
 
+def normalize_time(df, start_col="start", end_col="end", tz="local"):
+    df[start_col] = pd.to_datetime(df[start_col], errors="coerce")
+    df[end_col] = pd.to_datetime(df[end_col], errors="coerce")
+
+    if tz == "utc":
+        df[start_col] = df[start_col].dt.tz_convert("UTC") if df[start_col].dt.tz is not None else df[start_col]
+        df[end_col] = df[end_col].dt.tz_convert("UTC") if df[end_col].dt.tz is not None else df[end_col]
+    elif tz == "naive":
+        df[start_col] = df[start_col].dt.tz_localize(None)
+        df[end_col] = df[end_col].dt.tz_localize(None)
+    return df
+
 # Copy sample file if calendars.txt doesn't exist
 if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"):
     shutil.copy("calendars.txt.sample", "calendars.txt")
@@ -127,6 +139,7 @@ for url in calendar_urls:
 # Create DataFrame
 if all_events:
     df = pd.DataFrame(all_events)
+    df = normalize_time(df, tz="naive")  # or tz="utc"
     df["month"] = df["start"].dt.to_period("M")
     df["weekday"] = df["start"].dt.day_name()
     df["hour"] = df["start"].dt.hour
