@@ -8,6 +8,7 @@ import altair as alt
 import os
 import shutil
 from pandas import date_range, Period
+from calendar_store import update_event_store
 
 def load_calendar_urls(file_path="calendars.txt"):
     with open(file_path, "r", encoding="utf-8") as f:
@@ -60,7 +61,10 @@ def parse_ics_from_url(url):
                     current_event["DTSTART"] = line.replace("DTSTART:", "")
                 elif line.startswith("DTEND:"):
                     current_event["DTEND"] = line.replace("DTEND:", "")
-        return events
+        new_df = pd.DataFrame(events)
+        combined_df = update_event_store(url, new_df)
+        return combined_df.to_dict("records")
+
     except Exception as e:
         st.error(f"Error loading {url}: {e}")
         return []
