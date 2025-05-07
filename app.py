@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from io import StringIO
-from datetime import datetime
+from datetime import datetime, date
 import matplotlib.pyplot as plt
 import altair as alt
 import os
@@ -11,6 +11,7 @@ from pandas import date_range, Period
 from calendar_store import update_event_store
 from urllib.parse import urlparse
 from ics import Calendar
+import calendar
 
 def load_calendar_urls(file_path="calendars.txt"):
     with open(file_path, "r", encoding="utf-8") as f:
@@ -106,12 +107,44 @@ if all_events:
     available_years = sorted(df["year"].unique())
 
     # Add dropdown to select year
-    current_year = datetime.now().year
-    default_index = available_years.index(current_year) if current_year in available_years else len(available_years) - 1
-    selected_year = st.selectbox("Select year", available_years, index=default_index)
+    min_date = df["start"].min().date()
+    max_date = df["start"].max().date()
 
-    # Filter DataFrame by selected year
-    df = df[df["year"] == selected_year]
+    years = list(range(min_date.year, max_date.year + 1))
+    months = list(range(1, 13))
+    now = datetime.now()
+    start_month_default = 1
+    end_month_default = 12
+    start_year_default = end_year_default = now.year
+
+    st.subheader("Select Month Range")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        start_month = st.selectbox("Start Month", months, index=start_month_default - 1, format_func=lambda m: calendar.month_name[m])
+    with col2:
+        start_year = st.selectbox("Start Year", years, index=years.index(start_year_default))
+    with col3:
+        end_month = st.selectbox("End Month", months, index=end_month_default - 1, format_func=lambda m: calendar.month_name[m])
+    with col4:
+        end_year = st.selectbox("End Year", years, index=years.index(end_year_default))
+
+
+    # Convert to proper start/end dates
+    try:
+        start_date = date(start_year, start_month, 1)
+        end_day = calendar.monthrange(end_year, end_month)[1]
+        end_date = date(end_year, end_month, end_day)
+
+        if start_date > end_date:
+            st.warning("Start must be before end.")
+            st.stop()
+
+        df = df[(df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)]
+
+    except Exception as e:
+        st.error(f"Invalid date range: {e}")
+        st.stop()
 
     # Summary Table
     st.subheader("Summary Table")
@@ -126,7 +159,7 @@ if all_events:
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
 
     # Generate all months
-    all_months = pd.date_range(f"{selected_year}-01-01", f"{selected_year}-12-01", freq="MS").to_period("M")
+    all_months = pd.date_range(start=start_date, end=end_date, freq="MS").to_period("M")
     calendars = df["calendar"].unique()
     full_index = pd.MultiIndex.from_product([all_months, calendars], names=["month", "calendar"])
 
