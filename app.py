@@ -23,6 +23,7 @@ def extract_calendar_name(lines):
             return line.replace("X-WR-CALNAME:", "").strip()
     return "Unnamed"
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour (3600 seconds)
 def parse_ics_from_url(url):
     try:
         response = requests.get(url)
