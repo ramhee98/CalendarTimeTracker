@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg
+*.egg-info/
+dist/
+build/
+.env
+.venv
+venv/
+env/
+pip-wheel-metadata/
+*.log
+
+# Streamlit
+.streamlit/config.toml
+
+# CalendarTimeTracker specific
+calendars.txt
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
