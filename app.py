@@ -139,6 +139,8 @@ for url in calendar_urls:
 # Create DataFrame
 if all_events:
     df = pd.DataFrame(all_events)
+    start_date, end_date = select_month_range(df)
+    df = df[(df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)]
     df = normalize_time(df, tz="naive")  # or tz="utc"
     df["month"] = df["start"].dt.to_period("M")
     df["weekday"] = df["start"].dt.day_name()
@@ -146,6 +148,7 @@ if all_events:
 
     # Summary Table
     st.subheader("Summary Table")
+    st.caption(f"Showing events from {start_date} to {end_date}")
     summary = df.groupby("calendar")["duration_hours"].agg(
         Total_Hours="sum",
         Average_Hours_Per_Event="mean",
@@ -155,9 +158,6 @@ if all_events:
 
     csv = summary.to_csv(index=False).encode("utf-8")
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
-
-    start_date, end_date = select_month_range(df)
-    df = df[(df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)]
 
     # Generate all months
     all_months = pd.date_range(start=start_date, end=end_date, freq="MS").to_period("M")
@@ -174,7 +174,7 @@ if all_events:
     ).round(1).fillna(0)
 
     st.subheader("Relative Time per Month (100% Stacked)")
-
+    st.caption(f"Showing events from {start_date} to {end_date}")
     # Normalized altair chart with labeled axes
     chart_percent = alt.Chart(monthly).mark_bar().encode(
         x=alt.X("month:N", title="Month", axis=alt.Axis(labelAngle=-45)),
@@ -187,6 +187,7 @@ if all_events:
 
     # Altair chart with labeled axes
     st.subheader("Total Time per Month (Stacked by Calendar)")
+    st.caption(f"Showing events from {start_date} to {end_date}")
     chart = alt.Chart(monthly).mark_bar().encode(
         x=alt.X("month:N", title="Month", axis=alt.Axis(labelAngle=-45)),
         y=alt.Y("duration_hours:Q", title="Hours"),
@@ -198,6 +199,7 @@ if all_events:
 
     # Heatmap: Weekday vs Hour
     st.subheader("Activity Heatmap (Weekday × Hour)")
+    st.caption(f"Showing events from {start_date} to {end_date}")
     heatmap_data = df.groupby(["weekday", "hour"])["duration_hours"].sum().unstack(fill_value=0)
     heatmap_data = heatmap_data.reindex(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
     st.dataframe(heatmap_data.style.background_gradient(cmap="YlOrRd"))
