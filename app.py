@@ -10,6 +10,7 @@ import shutil
 from pandas import date_range, Period
 from calendar_store import update_event_store
 from urllib.parse import urlparse
+from ics import Calendar
 
 def load_calendar_urls(file_path="calendars.txt"):
     with open(file_path, "r", encoding="utf-8") as f:
@@ -28,8 +29,11 @@ def extract_calendar_name(lines):
 @st.cache_data(ttl=3600)  # Cache for 1 hour (3600 seconds)
 def parse_ics_from_url(url):
     try:
-        # Check if it's a local file URL
+        from urllib.parse import urlparse
+
+        # Fetch .ics content
         parsed_url = urlparse(url)
+        # Check if it's a local file URL
         if parsed_url.scheme == "file":
             path = parsed_url.path
             with open(path, "r", encoding="utf-8") as f:
@@ -39,37 +43,32 @@ def parse_ics_from_url(url):
             if response.status_code != 200:
                 return []
             content = response.text
-        lines = content.splitlines()
-        calendar_name = extract_calendar_name(lines)
+
+        # Extract calendar name from raw text
+        calendar_name = "Unnamed"
+        for line in content.splitlines():
+            if line.startswith("X-WR-CALNAME:"):
+                calendar_name = line.replace("X-WR-CALNAME:", "").strip()
+                break
+
+        # Parse using ics
+        cal = Calendar(content)
         events = []
-        current_event = {}
-        inside_event = False
-        for line in lines:
-            line = line.strip()
-            if line == "BEGIN:VEVENT":
-                current_event = {}
-                inside_event = True
-            elif line == "END:VEVENT":
-                try:
-                    start_str = current_event["DTSTART"].replace("Z", "")
-                    end_str = current_event["DTEND"].replace("Z", "")
-                    start = datetime.strptime(start_str, "%Y%m%dT%H%M%S")
-                    end = datetime.strptime(end_str, "%Y%m%dT%H%M%S")
-                    duration = (end - start).total_seconds() / 3600
-                    events.append({
-                        "calendar": calendar_name,
-                        "start": start,
-                        "end": end,
-                        "duration_hours": duration
-                    })
-                except:
-                    pass
-                inside_event = False
-            elif inside_event:
-                if line.startswith("DTSTART:"):
-                    current_event["DTSTART"] = line.replace("DTSTART:", "")
-                elif line.startswith("DTEND:"):
-                    current_event["DTEND"] = line.replace("DTEND:", "")
+        for event in cal.events:
+            try:
+                start = event.begin.datetime
+                end = event.end.datetime
+                duration = (end - start).total_seconds() / 3600
+                events.append({
+                    "calendar": calendar_name,
+                    "start": start,
+                    "end": end,
+                    "duration_hours": duration
+                })
+            except Exception as e:
+                print(f"Skipping event: {e}")
+                continue
+
         new_df = pd.DataFrame(events)
         combined_df = update_event_store(url, new_df)
         return combined_df.to_dict("records")
