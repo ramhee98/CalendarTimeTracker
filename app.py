@@ -154,6 +154,9 @@ if all_events:
         Average_Hours_Per_Event="mean",
         Event_Count="count"
     ).reset_index()
+    total_hours = summary["Total_Hours"].sum()
+    summary["Percent"] = (summary["Total_Hours"] / total_hours * 100).round(1)
+    summary = summary[["calendar", "Percent", "Total_Hours", "Average_Hours_Per_Event", "Event_Count"]]
     st.dataframe(summary)
 
     csv = summary.to_csv(index=False).encode("utf-8")
