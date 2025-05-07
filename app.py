@@ -5,6 +5,8 @@ from io import StringIO
 from datetime import datetime
 import matplotlib.pyplot as plt
 import altair as alt
+import os
+import shutil
 
 def load_calendar_urls(file_path="calendars.txt"):
     with open(file_path, "r", encoding="utf-8") as f:
@@ -60,6 +62,11 @@ def parse_ics_from_url(url):
     except Exception as e:
         st.error(f"Error loading {url}: {e}")
         return []
+
+# Copy sample file if calendars.txt doesn't exist
+if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"):
+    shutil.copy("calendars.txt.sample", "calendars.txt")
+    st.warning("No calendars.txt found. A sample file has been copied. Please update it with your calendar URLs and reload the page.")
 
 # Streamlit UI
 st.title("CalendarTimeTracker")
