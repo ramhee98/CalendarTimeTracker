@@ -27,9 +27,9 @@ def save_events_to_cache(url, df):
     df.to_csv(path, index=False)
 
 def update_event_store(url, new_events_df):
-    if new_events_df.empty:
-        return new_events_df  # Nothing to merge
     cached_df = load_cached_events(url)
+    if new_events_df.empty:
+        return cached_df  # Return just the old data if no new data
     if not cached_df.empty:
         combined_df = pd.concat([cached_df, new_events_df]).drop_duplicates(subset=["start", "end"])
     else:

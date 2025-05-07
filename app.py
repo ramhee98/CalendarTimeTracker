@@ -63,8 +63,6 @@ def parse_ics_from_url(url):
                     current_event["DTEND"] = line.replace("DTEND:", "")
         new_df = pd.DataFrame(events)
         combined_df = update_event_store(url, new_df)
-        if not events:
-            return []
         return combined_df.to_dict("records")
 
     except Exception as e:
