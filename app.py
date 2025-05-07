@@ -9,6 +9,7 @@ import os
 import shutil
 from pandas import date_range, Period
 from calendar_store import update_event_store
+from urllib.parse import urlparse
 
 def load_calendar_urls(file_path="calendars.txt"):
     with open(file_path, "r", encoding="utf-8") as f:
@@ -27,10 +28,18 @@ def extract_calendar_name(lines):
 @st.cache_data(ttl=3600)  # Cache for 1 hour (3600 seconds)
 def parse_ics_from_url(url):
     try:
-        response = requests.get(url)
-        if response.status_code != 200:
-            return []
-        lines = response.text.splitlines()
+        # Check if it's a local file URL
+        parsed_url = urlparse(url)
+        if parsed_url.scheme == "file":
+            path = parsed_url.path
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+        else:
+            response = requests.get(url)
+            if response.status_code != 200:
+                return []
+            content = response.text
+        lines = content.splitlines()
         calendar_name = extract_calendar_name(lines)
         events = []
         current_event = {}
