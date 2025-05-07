@@ -166,7 +166,24 @@ if all_events:
 
     monthly = df.groupby(["month", "calendar"])["duration_hours"].sum().reindex(full_index, fill_value=0).reset_index()
     monthly["month"] = monthly["month"].astype(str)
+    
+    # Normalize durations to 100% per month
+    monthly_totals = monthly.groupby("month")["duration_hours"].transform("sum")
+    monthly["percent"] = (
+        (monthly["duration_hours"] / monthly_totals.replace(0, pd.NA)) * 100
+    ).round(1).fillna(0)
 
+    st.subheader("Relative Time per Month (100% Stacked)")
+
+    # Normalized altair chart with labeled axes
+    chart_percent = alt.Chart(monthly).mark_bar().encode(
+        x=alt.X("month:N", title="Month", axis=alt.Axis(labelAngle=-45)),
+        y=alt.Y("percent:Q", title="Percentage", stack="normalize"),
+        color=alt.Color("calendar:N", title="Calendar"),
+        tooltip=["month", "calendar", "duration_hours", "percent"]
+    ).properties(width=700, height=400).interactive()
+
+    st.altair_chart(chart_percent, use_container_width=True)
 
     # Altair chart with labeled axes
     st.subheader("Total Time per Month (Stacked by Calendar)")
