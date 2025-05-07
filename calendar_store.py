@@ -13,15 +13,22 @@ def get_cache_file_path(url):
 
 def load_cached_events(url):
     path = get_cache_file_path(url)
-    if os.path.exists(path):
-        return pd.read_csv(path, parse_dates=["start", "end"])
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        try:
+            return pd.read_csv(path, parse_dates=["start", "end"])
+        except pd.errors.EmptyDataError:
+            return pd.DataFrame()  # Recover gracefully if file is corrupt or empty
     return pd.DataFrame()
 
 def save_events_to_cache(url, df):
+    if df.empty or df.columns.empty:
+        return  # Prevent saving if no usable data
     path = get_cache_file_path(url)
     df.to_csv(path, index=False)
 
 def update_event_store(url, new_events_df):
+    if new_events_df.empty:
+        return new_events_df  # Nothing to merge
     cached_df = load_cached_events(url)
     if not cached_df.empty:
         combined_df = pd.concat([cached_df, new_events_df]).drop_duplicates(subset=["start", "end"])
