@@ -4,6 +4,7 @@ import requests
 from io import StringIO
 from datetime import datetime
 import matplotlib.pyplot as plt
+import altair as alt
 
 def load_calendar_urls(file_path="calendars.txt"):
     with open(file_path, "r", encoding="utf-8") as f:
@@ -84,11 +85,12 @@ if all_events:
     available_years = sorted(df["year"].unique())
 
     # Add dropdown to select year
-    selected_year = st.selectbox("Select year", available_years, index=len(available_years)-1)
+    current_year = datetime.now().year
+    default_index = available_years.index(current_year) if current_year in available_years else len(available_years) - 1
+    selected_year = st.selectbox("Select year", available_years, index=default_index)
 
     # Filter DataFrame by selected year
     df = df[df["year"] == selected_year]
-
 
     # Summary Table
     st.subheader("Summary Table")
@@ -101,8 +103,6 @@ if all_events:
 
     csv = summary.to_csv(index=False).encode("utf-8")
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
-
-    import altair as alt
 
     # Prepare data
     monthly = df.groupby(["month", "calendar"])["duration_hours"].sum().reset_index()
