@@ -50,11 +50,14 @@ def parse_ics_from_url(url):
                 start = event.begin.datetime
                 end = event.end.datetime
                 duration = (end - start).total_seconds() / 3600
+                uid = event.uid
+
                 events.append({
                     "calendar": calendar_name,
                     "start": start,
                     "end": end,
-                    "duration_hours": duration
+                    "duration_hours": duration,
+                    "uid": uid
                 })
             except Exception as e:
                 print(f"Skipping event: {e}")
