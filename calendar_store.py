@@ -31,7 +31,8 @@ def update_event_store(url, new_events_df):
     if new_events_df.empty:
         return cached_df  # Return just the old data if no new data
     if not cached_df.empty:
-        combined_df = pd.concat([cached_df, new_events_df]).drop_duplicates(subset=["start", "end"])
+        dedup_columns = ["uid"] if "uid" in new_events_df.columns else ["start", "end"]
+        combined_df = pd.concat([cached_df, new_events_df]).drop_duplicates(subset=dedup_columns)
     else:
         combined_df = new_events_df
     save_events_to_cache(url, combined_df)
