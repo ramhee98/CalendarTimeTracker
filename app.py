@@ -11,7 +11,7 @@ import calendar
 import json
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour (3600 seconds)
-def parse_ics_from_url(url):
+def parse_ics_from_url(url, calendar_name):
     try:
         from urllib.parse import urlparse
 
@@ -28,12 +28,12 @@ def parse_ics_from_url(url):
                 return []
             content = response.text
 
-        # Extract calendar name from raw text
-        calendar_name = "Unnamed"
-        for line in content.splitlines():
-            if line.startswith("X-WR-CALNAME:"):
-                calendar_name = line.replace("X-WR-CALNAME:", "").strip()
-                break
+        # Extract calendar name from raw text if not set by calendars file
+        if calendar_name == "Unnamed":
+            for line in content.splitlines():
+                if line.startswith("X-WR-CALNAME:"):
+                    calendar_name = line.replace("X-WR-CALNAME:", "").strip()
+                    break
 
         # Parse using ics
         cal = Calendar(content)
@@ -71,7 +71,13 @@ def load_calendar_config(calendars_json_file="calendars.json", txt_file="calenda
             filetype = calendars_json_file
             with open(calendars_json_file, 'r') as file:
                 calendar_data = json.load(file)
-            calendars = calendar_data['calendars']
+            calendars = []
+            for calendar in calendar_data['calendars']:
+                # If a custom name is provided, use it
+                custom_name = calendar.get("custom_name", "")
+                if not custom_name:  # This checks if custom_name is empty or Unnamed
+                    custom_name = "Unnamed"
+                calendars.append({"url": calendar["url"], "custom_name": custom_name})
         # If the JSON config is not found, fall back to reading from the txt file
         elif os.path.exists(txt_file):
             filetype = txt_file
@@ -88,7 +94,8 @@ def load_calendar_config(calendars_json_file="calendars.json", txt_file="calenda
         all_events = []
         for calendar in calendars:
             url = calendar["url"]
-            events = parse_ics_from_url(url)
+            custom_name = calendar["custom_name"]
+            events = parse_ics_from_url(url, custom_name)
             all_events.extend(events)
     except json.JSONDecodeError as e:
         # Catch errors in JSON decoding
