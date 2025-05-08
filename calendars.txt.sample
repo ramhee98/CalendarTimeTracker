@@ -11,3 +11,6 @@ https://example.com/calendar2.ics  # Personal calendar
 
 # This Calendar has no custom name
 https://example.com/calendar3.ics
+
+# This is a calendar on my Disk, no custom name
+file:///home/user/calendar.ics
