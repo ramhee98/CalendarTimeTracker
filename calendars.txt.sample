@@ -1,6 +1,13 @@
 # Add your public .ics calendar URLs below
 # Lines starting with # are ignored
 # Inline comments are also supported
+# If no custom name is provided, "Unnamed" will be used
 
+# This calendar will be named "Work calendar"
 https://example.com/calendar1.ics  # Work calendar
+
+# This calendar will be named "Personal calendar"
 https://example.com/calendar2.ics  # Personal calendar
+
+# This Calendar has no custom name
+https://example.com/calendar3.ics
