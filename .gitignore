@@ -17,6 +17,7 @@ pip-wheel-metadata/
 
 # CalendarTimeTracker specific
 calendars.txt
+calendars.json
 data/
 
 # VS Code

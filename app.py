@@ -8,14 +8,7 @@ import shutil
 from calendar_store import update_event_store
 from ics import Calendar
 import calendar
-
-def load_calendar_urls(file_path="calendars.txt"):
-    with open(file_path, "r", encoding="utf-8") as f:
-        return [
-            line.split("#")[0].strip()
-            for line in f
-            if line.strip() and not line.strip().startswith("#")
-        ]
+import json
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour (3600 seconds)
 def parse_ics_from_url(url):
@@ -70,6 +63,42 @@ def parse_ics_from_url(url):
     except Exception as e:
         st.error(f"Error loading {url}: {e}")
         return []
+
+def load_calendar_config(calendars_json_file="calendars.json", txt_file="calendars.txt"):
+    try:
+        # Try loading the JSON calendar file first
+        if os.path.exists(calendars_json_file):
+            filetype = calendars_json_file
+            with open(calendars_json_file, 'r') as file:
+                calendar_data = json.load(file)
+            calendars = calendar_data['calendars']
+        # If the JSON config is not found, fall back to reading from the txt file
+        elif os.path.exists(txt_file):
+            filetype = txt_file
+            with open(txt_file, "r", encoding="utf-8") as f:
+                # For each line, we ignore comments and return a list of dictionaries
+                calendars = [
+                    {"url": line.split("#")[0].strip(), "custom_name": line.split("#")[0].strip()}  # Just using the URL as the custom name for now
+                    for line in f
+                    if line.strip() and not line.strip().startswith("#")
+                ]
+        else:
+            # If neither exists, return an empty list
+            return None
+        all_events = []
+        for calendar in calendars:
+            url = calendar["url"]
+            events = parse_ics_from_url(url)
+            all_events.extend(events)
+    except json.JSONDecodeError as e:
+        # Catch errors in JSON decoding
+        st.error(f"Error decoding JSON from {calendars_json_file}: {e}")
+        return None
+    except Exception as e:
+        # Catch any other exceptions that may occur
+        st.error(f"An error occurred while loading {filetype}: {e}")
+        return None
+    return all_events
 
 def select_month_range(df):
     min_date = df["start"].min().date()
@@ -136,13 +165,8 @@ if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"
 st.title("CalendarTimeTracker")
 st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
 
-# Load calendar URLs
-calendar_urls = load_calendar_urls("calendars.txt")
-all_events = []
-
-for url in calendar_urls:
-    events = parse_ics_from_url(url)
-    all_events.extend(events)
+# Load events from all calendar URLs
+all_events = load_calendar_config()
 
 # Create DataFrame
 if all_events:
