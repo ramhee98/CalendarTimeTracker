@@ -75,6 +75,7 @@ if uploaded_file and target_url:
         if events:
             import_df = pd.DataFrame(events)
             updated_df = update_event_store(target_url, import_df)
+            st.cache_data.clear() # Clear cache to reflect the imported changes
             st.success(f"✅ Imported {len(import_df)} events into: {selected_label}")
             st.caption("Events are now merged into the existing calendar cache.")
             st.dataframe(import_df.head(10))
