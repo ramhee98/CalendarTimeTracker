@@ -10,6 +10,9 @@
         },
         {
             "url": "https://example.com/private_calendar.ics"
+        },
+        {
+            "url": "file:///home/user/calendar.ics"
         }
     ]
 }
