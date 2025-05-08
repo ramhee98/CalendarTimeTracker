@@ -122,6 +122,11 @@ def normalize_time(df, start_col="start", end_col="end", tz="local"):
         df[end_col] = df[end_col].dt.tz_localize(None)
     return df
 
+def normalize_calendar_name(name):
+    if name.startswith("[Imported] "):
+        return name.replace("[Imported] ", "").strip()
+    return name.strip()
+
 # Copy sample file if calendars.txt doesn't exist
 if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"):
     shutil.copy("calendars.txt.sample", "calendars.txt")
@@ -142,6 +147,7 @@ for url in calendar_urls:
 # Create DataFrame
 if all_events:
     df = pd.DataFrame(all_events)
+    df["calendar"] = df["calendar"].apply(normalize_calendar_name)
     start_date, end_date = select_month_range(df)
     df = df[(df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)]
     df = normalize_time(df, tz="naive")  # or tz="utc"
