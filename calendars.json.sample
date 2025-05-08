@@ -1,0 +1,15 @@
+{
+    "calendars": [
+        {
+            "url": "https://example.com/work_calendar.ics",
+            "custom_name": "Work Calendar - Project A"
+        },
+        {
+            "url": "https://example.com/project_b_calendar.ics",
+            "custom_name": "Work Calendar - Project B"
+        },
+        {
+            "url": "https://example.com/private_calendar.ics"
+        }
+    ]
+}
