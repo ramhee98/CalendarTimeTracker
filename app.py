@@ -83,11 +83,14 @@ def load_calendar_config(calendars_json_file="calendars.json", txt_file="calenda
             filetype = txt_file
             with open(txt_file, "r", encoding="utf-8") as f:
                 # For each line, we ignore comments and return a list of dictionaries
-                calendars = [
-                    {"url": line.split("#")[0].strip(), "custom_name": line.split("#")[0].strip()}  # Just using the URL as the custom name for now
-                    for line in f
-                    if line.strip() and not line.strip().startswith("#")
-                ]
+                calendars = []
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        parts = line.split("#")
+                        url = parts[0].strip()
+                        custom_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Unnamed"
+                        calendars.append({"url": url, "custom_name": custom_name})
         else:
             # If neither exists, return an empty list
             return None
