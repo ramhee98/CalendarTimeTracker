@@ -64,7 +64,7 @@ def parse_ics_from_url(url, calendar_name):
         st.error(f"Error loading {url}: {e}")
         return []
 
-def load_calendar_config(calendars_json_file="calendars.json", txt_file="calendars.txt"):
+def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars.txt"):
     try:
         # Try loading the JSON calendar file first
         if os.path.exists(calendars_json_file):
@@ -75,7 +75,7 @@ def load_calendar_config(calendars_json_file="calendars.json", txt_file="calenda
             for calendar in calendar_data['calendars']:
                 # If a custom name is provided, use it
                 custom_name = calendar.get("custom_name", "")
-                if not custom_name:  # This checks if custom_name is empty or Unnamed
+                if not custom_name: # This checks if custom_name is empty or Unnamed
                     custom_name = "Unnamed"
                 calendars.append({"url": calendar["url"], "custom_name": custom_name})
         # If the JSON config is not found, fall back to reading from the txt file
@@ -92,23 +92,33 @@ def load_calendar_config(calendars_json_file="calendars.json", txt_file="calenda
                         custom_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Unnamed"
                         calendars.append({"url": url, "custom_name": custom_name})
         else:
-            # If neither exists, return an empty list
             return None
-        all_events = []
-        for calendar in calendars:
-            url = calendar["url"]
-            custom_name = calendar["custom_name"]
-            events = parse_ics_from_url(url, custom_name)
-            all_events.extend(events)
-    except json.JSONDecodeError as e:
-        # Catch errors in JSON decoding
-        st.error(f"Error decoding JSON from {calendars_json_file}: {e}")
-        return None
+        return calendars  # Return list of dictionaries, each containing 'url' and 'custom_name'
+
     except Exception as e:
-        # Catch any other exceptions that may occur
         st.error(f"An error occurred while loading {filetype}: {e}")
         return None
-    return all_events
+
+def load_all_events(calendars_json_file="calendars.json", txt_file="calendars.txt"):
+    try:
+        # Load the calendar URLs and custom names (same as load_calendar_config)
+        calendar_data = load_calendar_urls(calendars_json_file, txt_file)
+        
+        if not calendar_data:
+            return None
+
+        all_events = []
+        for calendar in calendar_data:
+            url = calendar["url"]
+            custom_name = calendar["custom_name"]
+            events = parse_ics_from_url(url, custom_name)  # Parse the events for each calendar
+            all_events.extend(events)
+        
+        return all_events
+
+    except Exception as e:
+        st.error(f"An error occurred while loading events: {e}")
+        return None
 
 def select_month_range(df):
     min_date = df["start"].min().date()
@@ -176,7 +186,7 @@ st.title("CalendarTimeTracker")
 st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
 
 # Load events from all calendar URLs
-all_events = load_calendar_config()
+all_events = load_all_events()
 
 # Create DataFrame
 if all_events:

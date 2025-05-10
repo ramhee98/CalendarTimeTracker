@@ -28,18 +28,44 @@ def get_wr_calname(url):
         print(f"Could not read calendar name for {url}: {e}")
     return url  # fallback label
 
-calendar_urls = load_calendar_urls("calendars.txt")
-https_calendars = [url for url in calendar_urls if url.startswith("https://")]
+calendar_data = load_calendar_urls()
+https_calendars = [calendar for calendar in calendar_data if calendar["url"].startswith("https://") or calendar["url"].startswith("file://")]
 
 if not https_calendars:
     st.warning("No HTTPS calendars found in calendars.txt")
     st.stop()
 
-# Build label like: "Education (https://example.com/calendar.ics)"
+# Build label like: "Work Calendar - Project B (https://example.com/calendar.ics)"
 calendar_label_map = {}
-for url in https_calendars:
-    name = get_wr_calname(url)
-    label = f"{name} ({url})"
+for calendar in https_calendars:
+    calendar_name = calendar["custom_name"]
+
+    # Check if calendar_name is "Unnamed", if so, read it from the ICS content
+    if calendar_name == "Unnamed":
+        try:
+            url = calendar["url"]
+            content = ""
+            
+            if url.startswith("file://"):
+                path = url.replace("file://", "")
+                with open(path, "r", encoding="utf-8") as f:
+                    content = f.read()
+            else:
+                response = requests.get(url, timeout=5)
+                response.raise_for_status()
+                content = response.text
+
+            # Attempt to extract calendar name from X-WR-CALNAME
+            for line in content.splitlines():
+                if line.startswith("X-WR-CALNAME:"):
+                    calendar_name = line.replace("X-WR-CALNAME:", "").strip()
+                    break
+        except Exception as e:
+            st.warning(f"Could not retrieve name for {url}, using 'Unnamed'. Error: {e}")
+            calendar_name = "Unnamed"  # Fallback to "Unnamed" if it fails
+
+    url = calendar["url"]
+    label = f"{calendar_name} ({url})"
     calendar_label_map[label] = url
 
 selected_label = st.selectbox("Select target calendar", list(calendar_label_map.keys()))
