@@ -203,12 +203,19 @@ def show_summary_table(df, start_date, end_date):
     csv = summary.to_csv(index=False).encode("utf-8")
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
 
-def show_duration_charts(df, start_date, end_date):
-    all_months = pd.date_range(start=start_date, end=end_date, freq="MS").to_period("M")
-    calendars = df["calendar"].unique()
-    full_index = pd.MultiIndex.from_product([all_months, calendars], names=["month", "calendar"])
+def show_duration_charts(df, start_date, end_date, group_mode):
+    group_label = group_mode.title()  # "Calendar" or "Category"
 
-    monthly = df.groupby(["month", "calendar"])["duration_hours"].sum().reindex(full_index, fill_value=0).reset_index()
+    all_months = pd.date_range(start=start_date, end=end_date, freq="MS").to_period("M")
+    groups = df["group"].unique()
+    full_index = pd.MultiIndex.from_product([all_months, groups], names=["month", "group"])
+
+    monthly = (
+        df.groupby(["month", "group"])["duration_hours"]
+        .sum()
+        .reindex(full_index, fill_value=0)
+        .reset_index()
+    )
     monthly["month"] = monthly["month"].astype(str)
     monthly_totals = monthly.groupby("month")["duration_hours"].transform("sum")
     monthly["percent"] = ((monthly["duration_hours"] / monthly_totals.replace(0, pd.NA)) * 100).round(1).fillna(0)
@@ -219,10 +226,10 @@ def show_duration_charts(df, start_date, end_date):
     chart_percent = alt.Chart(monthly).mark_bar().encode(
         x=alt.X("month:N", title="Month", axis=alt.Axis(labelAngle=-45)),
         y=alt.Y("percent:Q", title="Percentage", stack="normalize"),
-        color=alt.Color("calendar:N", title="Calendar"),
+        color=alt.Color("group:N", title=group_label),
         tooltip=[
             alt.Tooltip("month:N", title="Month"),
-            alt.Tooltip("calendar:N", title="Calendar"),
+            alt.Tooltip("group:N", title=group_label),
             alt.Tooltip("duration_hours:Q", title="Duration (hours)", format=".2f"),
             alt.Tooltip("percent:Q", title="Percentage", format=".1f")
         ]
@@ -230,15 +237,15 @@ def show_duration_charts(df, start_date, end_date):
     st.altair_chart(chart_percent, use_container_width=True)
 
     # Total duration stacked chart
-    st.subheader("Total Time per Month (Stacked by Calendar)")
+    st.subheader("Total Time per Month (Stacked by " + group_label + ")")
     st.caption(f"Showing events from {start_date} to {end_date}")
     chart = alt.Chart(monthly).mark_bar().encode(
         x=alt.X("month:N", title="Month", axis=alt.Axis(labelAngle=-45)),
         y=alt.Y("duration_hours:Q", title="Hours"),
-        color=alt.Color("calendar:N", title="Calendar"),
+        color=alt.Color("group:N", title=group_label),
         tooltip=[
             alt.Tooltip("month:N", title="Month"),
-            alt.Tooltip("calendar:N", title="Calendar"),
+            alt.Tooltip("group:N", title=group_label),
             alt.Tooltip("duration_hours:Q", title="Duration (hours)", format=".2f")
         ]
     ).properties(width=700, height=400).interactive()
@@ -296,7 +303,7 @@ if all_events:
     df, start_date, end_date = preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range)
     df["group"] = df[group_mode]
     show_summary_table(df, start_date, end_date)
-    show_duration_charts(df, start_date, end_date)
+    show_duration_charts(df, start_date, end_date, group_mode)
     show_weekday_hour_heatmap(df, start_date, end_date)
     show_calendar_distribution_pie_chart(df)
 
