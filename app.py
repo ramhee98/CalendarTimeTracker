@@ -258,22 +258,24 @@ def show_weekday_hour_heatmap(df, start_date, end_date):
     heatmap_data = heatmap_data.reindex(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
     st.dataframe(heatmap_data.style.background_gradient(cmap="YlOrRd"))
 
-def show_calendar_distribution_pie_chart(df):
-    summary = df.groupby('calendar')['duration_hours'].sum().reset_index()
-    total = summary['duration_hours'].sum()
-    summary['percentage'] = (summary['duration_hours'] / total) * 100
+def show_calendar_distribution_pie_chart(df, group_mode):
+    group_label = group_mode.title()  # "Calendar" or "Category"
+
+    summary = df.groupby("group")["duration_hours"].sum().reset_index()
+    total = summary["duration_hours"].sum()
+    summary["percentage"] = (summary["duration_hours"] / total) * 100
 
     chart = alt.Chart(summary).mark_arc().encode(
         theta=alt.Theta(field="duration_hours", type="quantitative"),
-        color=alt.Color(field="calendar", type="nominal"),
+        color=alt.Color(field="group", type="nominal", title=group_label),
         tooltip=[
-            alt.Tooltip("calendar:N", title="Calendar"),
+            alt.Tooltip("group:N", title=group_label),
             alt.Tooltip("duration_hours:Q", title="Total Duration (hours)", format=".2f"),
             alt.Tooltip("percentage:Q", title="Percentage", format=".2f")
         ]
     ).properties(width=500, height=500)
 
-    st.subheader("Time Distribution by Calendar")
+    st.subheader(f"Time Distribution by {group_label}")
     st.altair_chart(chart, use_container_width=True)
 
 # Copy sample file if calendars.txt doesn't exist
@@ -305,7 +307,7 @@ if all_events:
     show_summary_table(df, start_date, end_date)
     show_duration_charts(df, start_date, end_date, group_mode)
     show_weekday_hour_heatmap(df, start_date, end_date)
-    show_calendar_distribution_pie_chart(df)
+    show_calendar_distribution_pie_chart(df, group_mode)
 
 else:
     st.warning("No events loaded from calendars.")
