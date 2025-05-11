@@ -220,19 +220,30 @@ def show_duration_charts(df, start_date, end_date):
         x=alt.X("month:N", title="Month", axis=alt.Axis(labelAngle=-45)),
         y=alt.Y("percent:Q", title="Percentage", stack="normalize"),
         color=alt.Color("calendar:N", title="Calendar"),
-        tooltip=["month", "calendar", "duration_hours", "percent"]
+        tooltip=[
+            alt.Tooltip("month:N", title="Month"),
+            alt.Tooltip("calendar:N", title="Calendar"),
+            alt.Tooltip("duration_hours:Q", title="Duration (hours)", format=".2f"),
+            alt.Tooltip("percent:Q", title="Percentage", format=".1f")
+        ]
     ).properties(width=700, height=400).interactive()
     st.altair_chart(chart_percent, use_container_width=True)
-    # Altair chart with labeled axes
+
+    # Total duration stacked chart
     st.subheader("Total Time per Month (Stacked by Calendar)")
     st.caption(f"Showing events from {start_date} to {end_date}")
     chart = alt.Chart(monthly).mark_bar().encode(
         x=alt.X("month:N", title="Month", axis=alt.Axis(labelAngle=-45)),
         y=alt.Y("duration_hours:Q", title="Hours"),
         color=alt.Color("calendar:N", title="Calendar"),
-        tooltip=["month", "calendar", "duration_hours"]
+        tooltip=[
+            alt.Tooltip("month:N", title="Month"),
+            alt.Tooltip("calendar:N", title="Calendar"),
+            alt.Tooltip("duration_hours:Q", title="Duration (hours)", format=".2f")
+        ]
     ).properties(width=700, height=400).interactive()
     st.altair_chart(chart, use_container_width=True)
+
 
 def show_weekday_hour_heatmap(df, start_date, end_date):
     st.subheader("Activity Heatmap (Weekday × Hour)")
