@@ -191,16 +191,15 @@ def preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, se
 def show_summary_table(df, start_date, end_date):
     st.subheader("Summary Table")
     st.caption(f"Showing events from {start_date} to {end_date}")
-    summary = df.groupby("calendar")["duration_hours"].agg(
-        Total_Hours="sum",
-        Average_Hours_Per_Event="mean",
-        Event_Count="count"
-    ).reset_index()
-    total_hours = summary["Total_Hours"].sum()
-    summary["Percent"] = (summary["Total_Hours"] / total_hours * 100).round(1)
-    summary = summary[["calendar", "Percent", "Total_Hours", "Average_Hours_Per_Event", "Event_Count"]]
+    summary = (
+        df.groupby("group")["duration_hours"]
+        .agg(Total_Hours="sum", Average_Hours_Per_Event="mean", Event_Count="count")
+        .reset_index()
+    )
+    summary["Percent"] = (summary["Total_Hours"] / summary["Total_Hours"].sum() * 100).round(1)
+    summary = summary[["group", "Percent", "Total_Hours", "Average_Hours_Per_Event", "Event_Count"]]
+    summary.rename(columns={"group": "Group"}, inplace=True)
     st.dataframe(summary)
-
     csv = summary.to_csv(index=False).encode("utf-8")
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
 
