@@ -180,9 +180,11 @@ def normalize_calendar_name(name):
 def preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range):
     df = pd.DataFrame(all_events)
     df["calendar"] = df["calendar"].apply(normalize_calendar_name)
+    # Normalize time BEFORE filtering
+    df = normalize_time(df, tz="naive")  # or tz="utc"
+    # Now filtering by datetimes works safely
     start_date, end_date = select_month_range(df)
     df = df[(df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)]
-    df = normalize_time(df, tz="naive") # or tz="utc"
     df["month"] = df["start"].dt.to_period("M")
     df["weekday"] = df["start"].dt.day_name()
     df["hour"] = df["start"].dt.hour
