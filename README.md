@@ -11,6 +11,41 @@
 - 📦 Summary tables with CSV export
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
 
+## 🖼️ Screenshots
+
+### 📥 Importing `.ics` into a Calendar
+Upload `.ics` files and assign them to specific calendars configured via `calendars.json` or `calendars.txt`.
+
+![Import ICS File](img/import-ics.png)
+
+---
+
+### 📊 Relative Time per Month (100% Stacked)
+Visualize how time is distributed each month, normalized to 100%.
+
+![Relative Time per Month](img/relative-time-per-month.png)
+
+---
+
+### 📋 Summary Table
+Aggregate total hours, averages, and event counts per calendar or category.
+
+![Summary Table](img/summary.png)
+
+---
+
+### 🥧 Time Distribution by Calendar
+See which calendar contributes most to your time allocation.
+
+![Time Distribution Pie Chart](img/time-distribution-per-calendar.png)
+
+---
+
+### 📆 Total Time per Month (Stacked)
+View absolute duration stacked per calendar each month.
+
+![Total Time per Month](img/total-time-per-month-stacked.png)
+
 ## 🛠 Requirements
 Install dependencies:
 
