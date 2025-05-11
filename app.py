@@ -260,5 +260,28 @@ if all_events:
     heatmap_data = heatmap_data.reindex(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
     st.dataframe(heatmap_data.style.background_gradient(cmap="YlOrRd"))
 
+    # Summarize total time spent by calendar
+    calendar_summary = df.groupby('calendar')['duration_hours'].sum().reset_index()
+
+    # Calculate the total time spent across all calendars for percentage calculation
+    total_time = calendar_summary['duration_hours'].sum()
+
+    # Add a new column to calculate the percentage for each calendar
+    calendar_summary['percentage'] = (calendar_summary['duration_hours'] / total_time) * 100
+
+    # Create a pie chart to show the distribution of time spent by calendar
+    calendar_pie = alt.Chart(calendar_summary).mark_arc().encode(
+        theta=alt.Theta(field="duration_hours", type="quantitative"),
+        color=alt.Color(field="calendar", type="nominal"),
+        tooltip=[
+            "calendar:N",
+            alt.Tooltip("duration_hours:Q", title="Total Duration (hours)", format=".2f"),
+            alt.Tooltip("percentage:Q", title="Percentage", format=".2f")
+        ]
+    ).properties(width=500, height=500)
+
+    st.subheader("Time Distribution by Calendar")
+    st.altair_chart(calendar_pie, use_container_width=True)
+
 else:
     st.warning("No events loaded from calendars.")
