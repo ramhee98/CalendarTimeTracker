@@ -176,30 +176,18 @@ def normalize_calendar_name(name):
         return name.replace("[Imported] ", "").strip()
     return name.strip()
 
-# Copy sample file if calendars.txt doesn't exist
-if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"):
-    shutil.copy("calendars.txt.sample", "calendars.txt")
-    st.warning("No calendars.txt found. A sample file has been copied. Please update it with your calendar URLs and reload the page.")
-
-# Streamlit UI
-st.title("CalendarTimeTracker")
-st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
-
-# Load events from all calendar URLs
-all_events = load_all_events()
-
-# Create DataFrame
-if all_events:
+def preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range):
     df = pd.DataFrame(all_events)
     df["calendar"] = df["calendar"].apply(normalize_calendar_name)
     start_date, end_date = select_month_range(df)
     df = df[(df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)]
-    df = normalize_time(df, tz="naive")  # or tz="utc"
+    df = normalize_time(df, tz="naive") # or tz="utc"
     df["month"] = df["start"].dt.to_period("M")
     df["weekday"] = df["start"].dt.day_name()
     df["hour"] = df["start"].dt.hour
+    return df, start_date, end_date
 
-    # Summary Table
+def show_summary_table(df, start_date, end_date):
     st.subheader("Summary Table")
     st.caption(f"Showing events from {start_date} to {end_date}")
     summary = df.groupby("calendar")["duration_hours"].agg(
@@ -215,19 +203,15 @@ if all_events:
     csv = summary.to_csv(index=False).encode("utf-8")
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
 
-    # Generate all months
+def show_duration_charts(df, start_date, end_date):
     all_months = pd.date_range(start=start_date, end=end_date, freq="MS").to_period("M")
     calendars = df["calendar"].unique()
     full_index = pd.MultiIndex.from_product([all_months, calendars], names=["month", "calendar"])
 
     monthly = df.groupby(["month", "calendar"])["duration_hours"].sum().reindex(full_index, fill_value=0).reset_index()
     monthly["month"] = monthly["month"].astype(str)
-    
-    # Normalize durations to 100% per month
     monthly_totals = monthly.groupby("month")["duration_hours"].transform("sum")
-    monthly["percent"] = (
-        (monthly["duration_hours"] / monthly_totals.replace(0, pd.NA)) * 100
-    ).round(1).fillna(0)
+    monthly["percent"] = ((monthly["duration_hours"] / monthly_totals.replace(0, pd.NA)) * 100).round(1).fillna(0)
 
     st.subheader("Relative Time per Month (100% Stacked)")
     st.caption(f"Showing events from {start_date} to {end_date}")
@@ -238,9 +222,7 @@ if all_events:
         color=alt.Color("calendar:N", title="Calendar"),
         tooltip=["month", "calendar", "duration_hours", "percent"]
     ).properties(width=700, height=400).interactive()
-
     st.altair_chart(chart_percent, use_container_width=True)
-
     # Altair chart with labeled axes
     st.subheader("Total Time per Month (Stacked by Calendar)")
     st.caption(f"Showing events from {start_date} to {end_date}")
@@ -249,28 +231,22 @@ if all_events:
         y=alt.Y("duration_hours:Q", title="Hours"),
         color=alt.Color("calendar:N", title="Calendar"),
         tooltip=["month", "calendar", "duration_hours"]
-    ).properties(width=700, height=400).interactive()  # Enables zoom/pan
-
+    ).properties(width=700, height=400).interactive()
     st.altair_chart(chart, use_container_width=True)
 
-    # Heatmap: Weekday vs Hour
+def show_weekday_hour_heatmap(df, start_date, end_date):
     st.subheader("Activity Heatmap (Weekday × Hour)")
     st.caption(f"Showing events from {start_date} to {end_date}")
     heatmap_data = df.groupby(["weekday", "hour"])["duration_hours"].sum().unstack(fill_value=0)
     heatmap_data = heatmap_data.reindex(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
     st.dataframe(heatmap_data.style.background_gradient(cmap="YlOrRd"))
 
-    # Summarize total time spent by calendar
-    calendar_summary = df.groupby('calendar')['duration_hours'].sum().reset_index()
+def show_calendar_distribution_pie_chart(df):
+    summary = df.groupby('calendar')['duration_hours'].sum().reset_index()
+    total = summary['duration_hours'].sum()
+    summary['percentage'] = (summary['duration_hours'] / total) * 100
 
-    # Calculate the total time spent across all calendars for percentage calculation
-    total_time = calendar_summary['duration_hours'].sum()
-
-    # Add a new column to calculate the percentage for each calendar
-    calendar_summary['percentage'] = (calendar_summary['duration_hours'] / total_time) * 100
-
-    # Create a pie chart to show the distribution of time spent by calendar
-    calendar_pie = alt.Chart(calendar_summary).mark_arc().encode(
+    chart = alt.Chart(summary).mark_arc().encode(
         theta=alt.Theta(field="duration_hours", type="quantitative"),
         color=alt.Color(field="calendar", type="nominal"),
         tooltip=[
@@ -281,7 +257,27 @@ if all_events:
     ).properties(width=500, height=500)
 
     st.subheader("Time Distribution by Calendar")
-    st.altair_chart(calendar_pie, use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
+
+# Copy sample file if calendars.txt doesn't exist
+if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"):
+    shutil.copy("calendars.txt.sample", "calendars.txt")
+    st.warning("No calendars.txt found. A sample file has been copied. Please update it with your calendar URLs and reload the page.")
+
+# Streamlit UI
+st.title("CalendarTimeTracker")
+st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
+
+# Load events from all calendar URLs
+all_events = load_all_events()
+
+# Create DataFrame and render charts
+if all_events:
+    df, start_date, end_date = preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range)
+    show_summary_table(df, start_date, end_date)
+    show_duration_charts(df, start_date, end_date)
+    show_weekday_hour_heatmap(df, start_date, end_date)
+    show_calendar_distribution_pie_chart(df)
 
 else:
     st.warning("No events loaded from calendars.")
