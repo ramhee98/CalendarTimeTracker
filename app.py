@@ -244,7 +244,6 @@ def show_duration_charts(df, start_date, end_date):
     ).properties(width=700, height=400).interactive()
     st.altair_chart(chart, use_container_width=True)
 
-
 def show_weekday_hour_heatmap(df, start_date, end_date):
     st.subheader("Activity Heatmap (Weekday × Hour)")
     st.caption(f"Showing events from {start_date} to {end_date}")
@@ -261,7 +260,7 @@ def show_calendar_distribution_pie_chart(df):
         theta=alt.Theta(field="duration_hours", type="quantitative"),
         color=alt.Color(field="calendar", type="nominal"),
         tooltip=[
-            "calendar:N",
+            alt.Tooltip("calendar:N", title="Calendar"),
             alt.Tooltip("duration_hours:Q", title="Total Duration (hours)", format=".2f"),
             alt.Tooltip("percentage:Q", title="Percentage", format=".2f")
         ]
