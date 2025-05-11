@@ -13,10 +13,17 @@
 
 ## 🖼️ Screenshots
 
-### 📥 Importing `.ics` into a Calendar
-Upload `.ics` files and assign them to specific calendars configured via `calendars.json` or `calendars.txt`.
+### 📋 Summary Table
+Aggregate total hours, averages, and event counts per calendar or category.
 
-![Import ICS File](img/import-ics.png)
+![Summary Table](img/summary.png)
+
+---
+
+### 📆 Total Time per Month (Stacked)
+View absolute duration stacked per calendar each month.
+
+![Total Time per Month](img/total-time-per-month-stacked.png)
 
 ---
 
@@ -27,13 +34,6 @@ Visualize how time is distributed each month, normalized to 100%.
 
 ---
 
-### 📋 Summary Table
-Aggregate total hours, averages, and event counts per calendar or category.
-
-![Summary Table](img/summary.png)
-
----
-
 ### 🥧 Time Distribution by Calendar
 See which calendar contributes most to your time allocation.
 
@@ -41,10 +41,10 @@ See which calendar contributes most to your time allocation.
 
 ---
 
-### 📆 Total Time per Month (Stacked)
-View absolute duration stacked per calendar each month.
+### 📥 Importing `.ics` into a Calendar
+Upload `.ics` files and assign them to specific calendars configured via `calendars.json` or `calendars.txt`.
 
-![Total Time per Month](img/total-time-per-month-stacked.png)
+![Import ICS File](img/import-ics.png)
 
 ## 🛠 Requirements
 Install dependencies:
