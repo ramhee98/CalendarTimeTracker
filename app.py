@@ -74,16 +74,19 @@ def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars
             calendars = []
             for calendar in calendar_data['calendars']:
                 # If a custom name is provided, use it
-                custom_name = calendar.get("custom_name", "")
-                if not custom_name: # This checks if custom_name is empty or Unnamed
-                    custom_name = "Unnamed"
-                calendars.append({"url": calendar["url"], "custom_name": custom_name})
+                custom_name = calendar.get("custom_name", "") or "Unnamed"
+                category = calendar.get("category", "Uncategorized")
+                calendars.append({
+                    "url": calendar["url"],
+                    "custom_name": custom_name,
+                    "category": category
+                })
+            return calendars, "json"
         # If the JSON config is not found, fall back to reading from the txt file
         elif os.path.exists(txt_file):
             filetype = txt_file
+            calendars = []
             with open(txt_file, "r", encoding="utf-8") as f:
-                # For each line, we ignore comments and return a list of dictionaries
-                calendars = []
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#"):
@@ -91,34 +94,32 @@ def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars
                         url = parts[0].strip()
                         custom_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Unnamed"
                         calendars.append({"url": url, "custom_name": custom_name})
-        else:
-            return None
-        return calendars  # Return list of dictionaries, each containing 'url' and 'custom_name'
-
+            return calendars, "txt"
+        return None, None
     except Exception as e:
-        st.error(f"An error occurred while loading {filetype}: {e}")
-        return None
+        st.error(f"An error occurred while loading calendar config {filetype}: {e}")
+        return None, None
 
-def load_all_events(calendars_json_file="calendars.json", txt_file="calendars.txt"):
+def load_all_events():
     try:
-        # Load the calendar URLs and custom names (same as load_calendar_config)
-        calendar_data = load_calendar_urls(calendars_json_file, txt_file)
-        
+        calendar_data, source_type = load_calendar_urls()
         if not calendar_data:
-            return None
+            return None, None
 
         all_events = []
         for calendar in calendar_data:
             url = calendar["url"]
             custom_name = calendar["custom_name"]
-            events = parse_ics_from_url(url, custom_name)  # Parse the events for each calendar
+            category = calendar.get("category", "Uncategorized")
+            events = parse_ics_from_url(url, custom_name)
+            for event in events:
+                event["category"] = category
             all_events.extend(events)
-        
-        return all_events
 
+        return all_events, source_type
     except Exception as e:
         st.error(f"An error occurred while loading events: {e}")
-        return None
+        return None, None
 
 def select_month_range(df):
     min_date = df["start"].min().date()
@@ -279,11 +280,22 @@ st.title("CalendarTimeTracker")
 st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
 
 # Load events from all calendar URLs
-all_events = load_all_events()
+all_events, source_type = load_all_events()
 
-# Create DataFrame and render charts
 if all_events:
+    # Optional selector (only if JSON is used)
+    if source_type == "json":
+        group_mode = st.selectbox(
+            "View data by",
+            options=["calendar", "category"],
+            index=0,
+            format_func=str.title,
+            key="view_mode"
+        )
+    else:
+        group_mode = "calendar"
     df, start_date, end_date = preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range)
+    df["group"] = df[group_mode]
     show_summary_table(df, start_date, end_date)
     show_duration_charts(df, start_date, end_date)
     show_weekday_hour_heatmap(df, start_date, end_date)
