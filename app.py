@@ -10,7 +10,7 @@ from ics import Calendar
 import calendar
 import json
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour (3600 seconds)
+@st.cache_data(ttl=86400)  # Cache for 24 hour (86400 seconds)
 def parse_ics_from_url(url, calendar_name):
     try:
         from urllib.parse import urlparse
