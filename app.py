@@ -314,3 +314,11 @@ if all_events:
 
 else:
     st.warning("No events loaded from calendars.")
+
+st.markdown(
+    """
+    ---
+    🔗 [View project on GitHub](https://github.com/ramhee98/CalendarTimeTracker)
+    """,
+    unsafe_allow_html=True
+)
