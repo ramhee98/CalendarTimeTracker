@@ -205,52 +205,97 @@ def show_summary_table(df, start_date, end_date):
     csv = summary.to_csv(index=False).encode("utf-8")
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
 
-def show_duration_charts(df, start_date, end_date, group_mode):
+def show_duration_charts(df, start_date, end_date, group_mode, date_option):
     group_label = group_mode.title()  # "Calendar" or "Category"
 
-    all_months = pd.date_range(start=start_date, end=end_date, freq="MS").to_period("M")
+    # Create 'year', 'week', 'day', or 'month' columns based on the date_option
+    if date_option == "week":
+        df['year'] = df['start'].dt.year
+        df['week'] = df['start'].dt.isocalendar().week
+        time_label_base = 'week'
+        time_unit = "Week"
+        grouping_cols = ['year', 'week', 'group']
+    elif date_option == "day":
+        df['date'] = df['start'].dt.date
+        time_label_base = 'date'
+        time_unit = "Day"
+        grouping_cols = ['date', 'group']
+    else:  # Default to month
+        df['month'] = df['start'].dt.to_period('M')
+        time_label_base = 'month'
+        time_unit = "Month"
+        grouping_cols = ['month', 'group']
+
     groups = df["group"].unique()
-    full_index = pd.MultiIndex.from_product([all_months, groups], names=["month", "group"])
 
-    monthly = (
-        df.groupby(["month", "group"])["duration_hours"]
-        .sum()
-        .reindex(full_index, fill_value=0)
-        .reset_index()
-    )
-    monthly["month"] = monthly["month"].astype(str)
-    monthly_totals = monthly.groupby("month")["duration_hours"].transform("sum")
-    monthly["percent"] = ((monthly["duration_hours"] / monthly_totals.replace(0, pd.NA)) * 100).round(1).fillna(0)
+    # Aggregate duration
+    time_aggregation = df.groupby(grouping_cols)["duration_hours"].sum().reset_index()
 
-    st.subheader("Relative Time per Month (100% Stacked)")
+    if date_option == "week":
+        time_aggregation['time_label'] = time_aggregation['year'].astype(str) + '-W' + time_aggregation['week'].astype(str).str.zfill(2)
+        # Filter for weeks within the selected date range
+        time_aggregation = time_aggregation[
+            time_aggregation.apply(
+                lambda row: (datetime.fromisocalendar(row['year'], row['week'], 1).date() >= start_date) and
+                            (datetime.fromisocalendar(row['year'], row['week'], 7).date() <= end_date),
+                axis=1
+            )
+        ]
+    elif date_option == "day":
+        time_aggregation['time_label'] = time_aggregation['date'].astype(str)
+        time_aggregation = time_aggregation[
+            (time_aggregation['date'] >= start_date) & (time_aggregation['date'] <= end_date)
+        ]
+    else:  # Month
+        time_aggregation['time_label'] = time_aggregation['month'].astype(str)
+        time_aggregation = time_aggregation[
+            (time_aggregation['month'] >= pd.Period(start_date, freq='M')) &
+            (time_aggregation['month'] <= pd.Period(end_date, freq='M'))
+        ]
+
+    if time_aggregation.empty:
+        st.info(f"No data to display for the selected {time_unit.lower()} range.")
+        return
+
+    # Ensure 'time_label' exists even if filtering resulted in an empty DataFrame
+    if 'time_label' not in time_aggregation.columns:
+        time_aggregation['time_label'] = pd.Series(dtype='str') # Create an empty 'time_label' column
+
+    time_totals = time_aggregation.groupby('time_label')["duration_hours"].transform("sum")
+    time_aggregation["percent"] = ((time_aggregation["duration_hours"] / time_totals.replace(0, pd.NA)) * 100).round(1).fillna(0)
+
+    st.subheader(f"Relative Time per {time_unit} (100% Stacked)")
     st.caption(f"Showing events from {start_date} to {end_date}")
-    # Normalized altair chart with labeled axes
-    chart_percent = alt.Chart(monthly).mark_bar().encode(
-        x=alt.X("month:N", title="Month", axis=alt.Axis(labelAngle=-45)),
+
+    # Normalized chart with labeled axes
+    chart_percent = alt.Chart(time_aggregation).mark_bar().encode(
+        x=alt.X(f"time_label:N", title=time_unit, axis=alt.Axis(labelAngle=-45)),
         y=alt.Y("percent:Q", title="Percentage", stack="normalize"),
         color=alt.Color("group:N", title=group_label),
         tooltip=[
-            alt.Tooltip("month:N", title="Month"),
+            alt.Tooltip(f"time_label:N", title=time_unit),
             alt.Tooltip("group:N", title=group_label),
             alt.Tooltip("duration_hours:Q", title="Duration (hours)", format=".2f"),
             alt.Tooltip("percent:Q", title="Percentage", format=".1f")
         ]
     ).properties(width=700, height=400).interactive()
+
     st.altair_chart(chart_percent, use_container_width=True)
 
     # Total duration stacked chart
-    st.subheader("Total Time per Month (Stacked by " + group_label + ")")
+    st.subheader(f"Total Time per {time_unit} (Stacked by " + group_label + ")")
     st.caption(f"Showing events from {start_date} to {end_date}")
-    chart = alt.Chart(monthly).mark_bar().encode(
-        x=alt.X("month:N", title="Month", axis=alt.Axis(labelAngle=-45)),
+    chart = alt.Chart(time_aggregation).mark_bar().encode(
+        x=alt.X(f"time_label:N", title=time_unit, axis=alt.Axis(labelAngle=-45)),
         y=alt.Y("duration_hours:Q", title="Hours"),
         color=alt.Color("group:N", title=group_label),
         tooltip=[
-            alt.Tooltip("month:N", title="Month"),
+            alt.Tooltip(f"time_label:N", title=time_unit),
             alt.Tooltip("group:N", title=group_label),
             alt.Tooltip("duration_hours:Q", title="Duration (hours)", format=".2f")
         ]
     ).properties(width=700, height=400).interactive()
+
     st.altair_chart(chart, use_container_width=True)
 
 def show_weekday_hour_heatmap(df, start_date, end_date):
@@ -308,7 +353,15 @@ if all_events:
     df, start_date, end_date = preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range)
     df["group"] = df[group_mode]
     show_summary_table(df, start_date, end_date)
-    show_duration_charts(df, start_date, end_date, group_mode)
+
+    st.subheader(f"Relative Time Charts")
+    date_option = st.radio(
+        "Show duration charts by:",
+        options=["week", "day", "month"],
+        index=0,
+        horizontal=True
+    )
+    show_duration_charts(df, start_date, end_date, group_mode, date_option)
     show_weekday_hour_heatmap(df, start_date, end_date)
     show_calendar_distribution_pie_chart(df, group_mode)
 
