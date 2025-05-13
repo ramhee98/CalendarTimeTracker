@@ -6,7 +6,7 @@ from app import load_calendar_urls
 import requests
 import os
 
-#st.set_page_config(page_title="Import ICS File", layout="wide")
+st.set_page_config(page_title="Import ICS File", layout="wide")
 st.title("Import ICS File into Existing Calendar")
 
 # --- Load calendar URLs from calendars.txt ---

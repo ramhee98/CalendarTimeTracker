@@ -286,6 +286,7 @@ if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"
     st.warning("No calendars.txt found. A sample file has been copied. Please update it with your calendar URLs and reload the page.")
 
 # Streamlit UI
+st.set_page_config(page_title="CalendarTimeTracker", layout="wide")
 st.title("CalendarTimeTracker")
 st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
 
