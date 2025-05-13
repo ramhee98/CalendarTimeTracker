@@ -6,7 +6,7 @@ from app import load_calendar_urls
 import requests
 import os
 
-st.set_page_config(page_title="Import ICS File", layout="wide")
+#st.set_page_config(page_title="Import ICS File", layout="wide")
 st.title("Import ICS File into Existing Calendar")
 
 # --- Load calendar URLs from calendars.txt ---
@@ -28,11 +28,11 @@ def get_wr_calname(url):
         print(f"Could not read calendar name for {url}: {e}")
     return url  # fallback label
 
-calendar_data = load_calendar_urls()
+calendar_data, source_type = load_calendar_urls()
 https_calendars = [calendar for calendar in calendar_data if calendar["url"].startswith("https://") or calendar["url"].startswith("file://")]
 
 if not https_calendars:
-    st.warning("No HTTPS calendars found in calendars.txt")
+    st.warning(f"No HTTPS calendars found in calendars.{source_type}")
     st.stop()
 
 # Build label like: "Work Calendar - Project B (https://example.com/calendar.ics)"
