@@ -130,7 +130,7 @@ def select_month_range(df):
     now = datetime.now()
 
     start_month_default = 1
-    end_month_default = 12
+    end_month_default = datetime.now().month
     start_year_default = end_year_default = now.year
 
     st.subheader("Select Month Range")
