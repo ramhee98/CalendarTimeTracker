@@ -10,6 +10,7 @@
 - 🍰 Pie chart for calendar/category time distribution
 - 📦 Summary tables with CSV export
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
+- 🎨 Custom calendar colors
 
 ## 🖼️ Screenshots
 
@@ -63,7 +64,7 @@ A plain text file where each line contains a calendar URL and an optional name.
 
 ### Option 2: `calendars.json` (Preferred)
 
-Supports rich metadata like category assignment.
+Supports rich metadata like category assignment and custom calendar colors.
 
 If `calendars.json` is present, it will be used automatically and enables category-based grouping.
 
