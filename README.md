@@ -47,11 +47,19 @@ Upload `.ics` files and assign them to specific calendars configured via `calend
 
 ![Import ICS File](img/import-ics.png)
 
-## 🛠 Requirements
+## 📦 Requirements
 Install dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
+
+## 🛠 Installation
+
+Use the install script to get the project up and running on your local machine:
+
+```bash
+bash install.sh
 ```
 
 ## ⚙️ Configuration
