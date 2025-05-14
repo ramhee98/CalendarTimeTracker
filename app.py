@@ -9,6 +9,15 @@ from calendar_store import update_event_store
 from ics import Calendar
 import calendar
 import json
+import colorsys
+
+def random_distinct_color(index, total_colors):
+    hue = (index / total_colors)  # Distribute hues evenly (0 to 1)
+    saturation = 0.7  # Maintain vivid colors
+    lightness = 0.5  # Keep the colors neither too dark nor too light
+    r, g, b = colorsys.hls_to_rgb(hue, lightness, saturation)
+    color = "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
+    return color
 
 @st.cache_data(ttl=86400)  # Cache for 24 hour (86400 seconds)
 def parse_ics_from_url(url, calendar_name):
@@ -66,36 +75,74 @@ def parse_ics_from_url(url, calendar_name):
 
 def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars.txt"):
     try:
+        category_colors = {}  # To keep track of category colors
+        calendar_colors = {}  # To store colors from JSON for calendars
+
         # Try loading the JSON calendar file first
         if os.path.exists(calendars_json_file):
             filetype = calendars_json_file
             with open(calendars_json_file, 'r') as file:
                 calendar_data = json.load(file)
             calendars = []
-            for calendar in calendar_data['calendars']:
-                # If a custom name is provided, use it
+            distinct_color_index = 0
+            total_calendars = len(calendar_data['calendars'])
+
+            for index, calendar in enumerate(calendar_data['calendars']):
+                url = calendar["url"]
                 custom_name = calendar.get("custom_name", "") or "Unnamed"
-                category = calendar.get("category", "Uncategorized")
+                category = calendar.get("category", custom_name) # Default category to custom_name if not provided
+                color_from_json = calendar.get("color")
+
+                # Store color from JSON if available, or generate if missing
+                if color_from_json:
+                    calendar_colors[custom_name] = color_from_json
+                    color = color_from_json
+                else:
+                    color = random_distinct_color(distinct_color_index, total_calendars)
+                    calendar_colors[custom_name] = color
+                    distinct_color_index += 1
+
+                # Assign color to category if not already assigned
+                if category not in category_colors:
+                    # If a specific color is defined for a calendar, use that for its category (if category is same as custom_name)
+                    if category == custom_name and color_from_json:
+                        category_colors[category] = color_from_json
+                    else:
+                        category_colors[category] = random_distinct_color(distinct_color_index, total_calendars)
+                        distinct_color_index += 1
+
                 calendars.append({
-                    "url": calendar["url"],
+                    "url": url,
                     "custom_name": custom_name,
-                    "category": category
+                    "category": category,
+                    "color": color
                 })
             return calendars, "json"
+
         # If the JSON config is not found, fall back to reading from the txt file
         elif os.path.exists(txt_file):
             filetype = txt_file
             calendars = []
             with open(txt_file, "r", encoding="utf-8") as f:
-                for line in f:
+                total_colors = sum(1 for line in f if line.strip() and not line.startswith("#"))  # Count total calendars
+                f.seek(0)  # Reset file pointer to the beginning
+                for index, line in enumerate(f):
                     line = line.strip()
                     if line and not line.startswith("#"):
                         parts = line.split("#")
                         url = parts[0].strip()
                         custom_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Unnamed"
-                        calendars.append({"url": url, "custom_name": custom_name})
+                        category = custom_name  # Use custom_name as category for .txt
+
+                        # Assign color to category if not already assigned
+                        if category not in category_colors:
+                            category_colors[category] = random_distinct_color(index, total_colors)
+
+                        calendars.append({"url": url, "custom_name": custom_name, "category": category, "color": category_colors[category]})
             return calendars, "txt"
+
         return None, None
+
     except Exception as e:
         st.error(f"An error occurred while loading calendar config {filetype}: {e}")
         return None, None
@@ -107,13 +154,16 @@ def load_all_events():
             return None, None
 
         all_events = []
-        for calendar in calendar_data:
-            url = calendar["url"]
-            custom_name = calendar["custom_name"]
-            category = calendar.get("category", "Uncategorized")
+        for calendar_info in calendar_data:
+            url = calendar_info["url"]
+            custom_name = calendar_info["custom_name"]
+            category = calendar_info["category"] # Ensure category is always taken from calendar_data
+            color = calendar_info["color"]
             events = parse_ics_from_url(url, custom_name)
             for event in events:
                 event["category"] = category
+                event["calendar_name"] = custom_name
+                event["color"] = color  # Add color to each event
             all_events.extend(events)
 
         return all_events, source_type
@@ -179,7 +229,7 @@ def normalize_calendar_name(name):
 
 def preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range):
     df = pd.DataFrame(all_events)
-    df["calendar"] = df["calendar"].apply(normalize_calendar_name)
+    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     # Normalize time BEFORE filtering
     df = normalize_time(df, tz="naive")  # or tz="utc"
     # Now filtering by datetimes works safely
@@ -207,6 +257,9 @@ def show_summary_table(df, start_date, end_date):
 
 def show_duration_charts(df, start_date, end_date, group_mode, date_option):
     group_label = group_mode.title()  # "Calendar" or "Category"
+
+    # Create a color mapping based on the selected group
+    color_mapping = df.groupby('group')['color'].first().to_dict()
 
     # Create 'year', 'week', 'day', or 'month' columns based on the date_option
     if date_option == "week":
@@ -267,11 +320,11 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
     st.subheader(f"Relative Time per {time_unit} (100% Stacked)")
     st.caption(f"Showing events from {start_date} to {end_date}")
 
-    # Normalized chart with labeled axes
+    # Normalized chart with labeled axes, apply hex color from color_mapping
     chart_percent = alt.Chart(time_aggregation).mark_bar().encode(
         x=alt.X(f"time_label:N", title=time_unit, axis=alt.Axis(labelAngle=-45)),
         y=alt.Y("percent:Q", title="Percentage", stack="normalize"),
-        color=alt.Color("group:N", title=group_label),
+        color=alt.Color("group:N", title=group_label, scale=alt.Scale(domain=list(color_mapping.keys()), range=list(color_mapping.values()))),
         tooltip=[
             alt.Tooltip(f"time_label:N", title=time_unit),
             alt.Tooltip("group:N", title=group_label),
@@ -288,7 +341,7 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
     chart = alt.Chart(time_aggregation).mark_bar().encode(
         x=alt.X(f"time_label:N", title=time_unit, axis=alt.Axis(labelAngle=-45)),
         y=alt.Y("duration_hours:Q", title="Hours"),
-        color=alt.Color("group:N", title=group_label),
+        color=alt.Color("group:N", title=group_label, scale=alt.Scale(domain=list(color_mapping.keys()), range=list(color_mapping.values()))),
         tooltip=[
             alt.Tooltip(f"time_label:N", title=time_unit),
             alt.Tooltip("group:N", title=group_label),
@@ -308,13 +361,21 @@ def show_weekday_hour_heatmap(df, start_date, end_date):
 def show_calendar_distribution_pie_chart(df, group_mode):
     group_label = group_mode.title()  # "Calendar" or "Category"
 
+    # Create a color mapping based on the selected group
+    color_mapping = df.groupby('group')['color'].first().to_dict()
+
     summary = df.groupby("group")["duration_hours"].sum().reset_index()
     total = summary["duration_hours"].sum()
     summary["percentage"] = (summary["duration_hours"] / total) * 100
 
     chart = alt.Chart(summary).mark_arc().encode(
         theta=alt.Theta(field="duration_hours", type="quantitative"),
-        color=alt.Color(field="group", type="nominal", title=group_label),
+        color=alt.Color(
+            field="group",
+            type="nominal",
+            title=group_label,
+            scale=alt.Scale(domain=list(color_mapping.keys()), range=list(color_mapping.values()))
+        ),
         tooltip=[
             alt.Tooltip("group:N", title=group_label),
             alt.Tooltip("duration_hours:Q", title="Total Duration (hours)", format=".2f"),
