@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 import altair as alt
 import os
 import shutil
@@ -11,6 +11,7 @@ import calendar
 import json
 import colorsys
 from urllib.parse import urlparse
+import tzlocal
 
 def random_distinct_color(index, total_colors):
     hue = (index / total_colors)  # Distribute hues evenly (0 to 1)
@@ -48,8 +49,8 @@ def parse_ics_from_url(url, calendar_name):
         events = []
         for event in cal.events:
             try:
-                start = event.begin.datetime
-                end = event.end.datetime
+                start = event.begin.datetime.astimezone(timezone.utc)
+                end = event.end.datetime.astimezone(timezone.utc)
                 duration = (end - start).total_seconds() / 3600
                 uid = event.uid
 
@@ -214,11 +215,15 @@ def normalize_time(df, start_col="start", end_col="end", tz="local"):
     df[end_col] = pd.to_datetime(df[end_col], errors="coerce")
 
     if tz == "utc":
-        df[start_col] = df[start_col].dt.tz_convert("UTC") if df[start_col].dt.tz is not None else df[start_col]
-        df[end_col] = df[end_col].dt.tz_convert("UTC") if df[end_col].dt.tz is not None else df[end_col]
+        df[start_col] = df[start_col].dt.tz_convert("UTC")
+        df[end_col] = df[end_col].dt.tz_convert("UTC")
     elif tz == "naive":
         df[start_col] = df[start_col].dt.tz_localize(None)
         df[end_col] = df[end_col].dt.tz_localize(None)
+    elif tz == "local":
+        local_tz = tzlocal.get_localzone()
+        df[start_col] = df[start_col].dt.tz_convert(local_tz)
+        df[end_col] = df[end_col].dt.tz_convert(local_tz)
     return df
 
 def normalize_calendar_name(name):
@@ -230,7 +235,7 @@ def preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, se
     df = pd.DataFrame(all_events)
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     # Normalize time BEFORE filtering
-    df = normalize_time(df, tz="naive")  # or tz="utc"
+    df = normalize_time(df, tz="local")  # or tz="utc"
     # Filter by date range
     start_date, end_date = select_month_range(df)
     # Update day/week/month distribution calculations to handle multi-day events properly
@@ -299,9 +304,11 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
 
         # Calculate duration for each event in each week
         results = []
+        tz = df['start'].dt.tz
         for _, week_row in weeks_df.iterrows():
-            period_start = pd.Timestamp(week_row['week_start'])
-            period_end = pd.Timestamp(week_row['week_end']).replace(hour=23, minute=59, second=59)
+            # Ensure period_start and period_end are tz-aware
+            period_start = pd.Timestamp(week_row['week_start']).tz_localize(tz)
+            period_end = pd.Timestamp(week_row['week_end']).replace(hour=23, minute=59, second=59).tz_localize(tz)
 
             for _, event_row in df.iterrows():
                 duration = calculate_time_proportion(event_row, period_start, period_end)
@@ -332,9 +339,10 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
 
         # Calculate duration for each event in each day
         results = []
+        tz = df["start"].dt.tz
         for day in days:
-            period_start = pd.Timestamp(day)
-            period_end = pd.Timestamp(day).replace(hour=23, minute=59, second=59)
+            period_start = pd.Timestamp(day).tz_localize(tz)
+            period_end = pd.Timestamp(day).replace(hour=23, minute=59, second=59).tz_localize(tz)
 
             for _, event_row in df.iterrows():
                 duration = calculate_time_proportion(event_row, period_start, period_end)
@@ -370,12 +378,12 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
                 current_date = date(current_date.year, current_date.month + 1, 1)
 
         months_df = pd.DataFrame(months)
-
         # Calculate duration for each event in each month
         results = []
+        tz = df["start"].dt.tz
         for _, month_row in months_df.iterrows():
-            period_start = pd.Timestamp(month_row['month_start'])
-            period_end = pd.Timestamp(month_row['month_end']).replace(hour=23, minute=59, second=59)
+            period_start = pd.Timestamp(month_row['month_start']).tz_localize(tz)
+            period_end = pd.Timestamp(month_row['month_end']).replace(hour=23, minute=59, second=59).tz_localize(tz)
 
             for _, event_row in df.iterrows():
                 duration = calculate_time_proportion(event_row, period_start, period_end)

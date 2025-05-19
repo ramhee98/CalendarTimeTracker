@@ -5,6 +5,7 @@ from calendar_store import update_event_store
 from app import load_calendar_urls
 import requests
 import os
+from datetime import timezone
 
 st.set_page_config(page_title="Import ICS File", layout="wide")
 st.title("Import ICS File into Existing Calendar")
@@ -82,8 +83,8 @@ if uploaded_file and target_url:
         events = []
         for event in cal.events:
             try:
-                start = event.begin.datetime
-                end = event.end.datetime
+                start = event.begin.datetime.astimezone(timezone.utc)
+                end = event.end.datetime.astimezone(timezone.utc)
                 duration = (end - start).total_seconds() / 3600
                 uid = event.uid
                 # Extract name only (before first parenthesis)
