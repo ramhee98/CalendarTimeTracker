@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import altair as alt
 import os
 import shutil
@@ -10,6 +10,7 @@ from ics import Calendar
 import calendar
 import json
 import colorsys
+from urllib.parse import urlparse
 
 def random_distinct_color(index, total_colors):
     hue = (index / total_colors)  # Distribute hues evenly (0 to 1)
@@ -22,8 +23,6 @@ def random_distinct_color(index, total_colors):
 @st.cache_data(ttl=86400)  # Cache for 24 hour (86400 seconds)
 def parse_ics_from_url(url, calendar_name):
     try:
-        from urllib.parse import urlparse
-
         # Fetch .ics content
         parsed_url = urlparse(url)
         # Check if it's a local file URL
@@ -232,9 +231,15 @@ def preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, se
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     # Normalize time BEFORE filtering
     df = normalize_time(df, tz="naive")  # or tz="utc"
-    # Now filtering by datetimes works safely
+    # Filter by date range
     start_date, end_date = select_month_range(df)
-    df = df[(df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)]
+    # Update day/week/month distribution calculations to handle multi-day events properly
+    # For filtering, we use a more inclusive approach to catch all events that span the date range
+    df = df[
+        ((df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)) |  # Events that start in range
+        ((df["end"].dt.date >= start_date) & (df["end"].dt.date <= end_date)) |      # Events that end in range
+        ((df["start"].dt.date <= start_date) & (df["end"].dt.date >= end_date))      # Events that span the entire range
+    ]
     df["month"] = df["start"].dt.to_period("M")
     df["weekday"] = df["start"].dt.day_name()
     df["hour"] = df["start"].dt.hour
@@ -261,61 +266,143 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
     # Create a color mapping based on the selected group
     color_mapping = df.groupby('group')['color'].first().to_dict()
 
-    # Create 'year', 'week', 'day', or 'month' columns based on the date_option
-    if date_option == "week":
-        df['year'] = df['start'].dt.year
-        df['week'] = df['start'].dt.isocalendar().week
-        time_label_base = 'week'
-        time_unit = "Week"
-        grouping_cols = ['year', 'week', 'group']
-    elif date_option == "day":
-        df['date'] = df['start'].dt.date
-        time_label_base = 'date'
-        time_unit = "Day"
-        grouping_cols = ['date', 'group']
-    else:  # Default to month
-        df['month'] = df['start'].dt.to_period('M')
-        time_label_base = 'month'
-        time_unit = "Month"
-        grouping_cols = ['month', 'group']
+    # Create a function to calculate the proportion of an event that falls within a specific time period
+    def calculate_time_proportion(row, period_start, period_end):
+        event_start = max(row['start'], period_start)
+        event_end = min(row['end'], period_end)
 
-    groups = df["group"].unique()
+        # If the event doesn't overlap with this period, return 0
+        if event_end <= event_start:
+            return 0
 
-    # Aggregate duration
-    time_aggregation = df.groupby(grouping_cols)["duration_hours"].sum().reset_index()
+        # Calculate the proportion of the event that falls in this period
+        event_duration = (row['end'] - row['start']).total_seconds() / 3600
+        period_duration = (event_end - event_start).total_seconds() / 3600
+
+        return period_duration
+
+    # Create time-based data frames based on the selected date_option
+    time_aggregation = pd.DataFrame()
 
     if date_option == "week":
-        time_aggregation['time_label'] = time_aggregation['year'].astype(str) + '-W' + time_aggregation['week'].astype(str).str.zfill(2)
-        # Filter for weeks within the selected date range
-        time_aggregation = time_aggregation[
-            time_aggregation.apply(
-                lambda row: (datetime.fromisocalendar(row['year'], row['week'], 1).date() >= start_date) and
-                            (datetime.fromisocalendar(row['year'], row['week'], 7).date() <= end_date),
-                axis=1
-            )
-        ]
+        # Generate all weeks in the selected range
+        weeks = []
+        current_date = start_date
+        while current_date <= end_date:
+            year, week, _ = current_date.isocalendar()
+            weeks.append({'year': year, 'week': week, 
+                         'week_start': datetime.fromisocalendar(year, week, 1),
+                         'week_end': datetime.fromisocalendar(year, week, 7)})
+            current_date += timedelta(days=7)
+
+        weeks_df = pd.DataFrame(weeks)
+
+        # Calculate duration for each event in each week
+        results = []
+        for _, week_row in weeks_df.iterrows():
+            period_start = pd.Timestamp(week_row['week_start'])
+            period_end = pd.Timestamp(week_row['week_end']).replace(hour=23, minute=59, second=59)
+
+            for _, event_row in df.iterrows():
+                duration = calculate_time_proportion(event_row, period_start, period_end)
+                if duration > 0:
+                    results.append({
+                        'year': week_row['year'],
+                        'week': week_row['week'],
+                        'group': event_row['group'],
+                        'duration_hours': duration,
+                        'time_label': f"{week_row['year']}-W{week_row['week']:02d}"
+                    })
+
+        if results:
+            time_aggregation = pd.DataFrame(results)
+            time_aggregation = time_aggregation.groupby(['time_label', 'group']).agg(
+                duration_hours=('duration_hours', 'sum'),
+                year=('year', 'first'),
+                week=('week', 'first')
+            ).reset_index()
+
     elif date_option == "day":
-        time_aggregation['time_label'] = time_aggregation['date'].astype(str)
-        time_aggregation = time_aggregation[
-            (time_aggregation['date'] >= start_date) & (time_aggregation['date'] <= end_date)
-        ]
+        # Generate all days in the selected range
+        days = []
+        current_date = start_date
+        while current_date <= end_date:
+            days.append(current_date)
+            current_date += timedelta(days=1)
+
+        # Calculate duration for each event in each day
+        results = []
+        for day in days:
+            period_start = pd.Timestamp(day)
+            period_end = pd.Timestamp(day).replace(hour=23, minute=59, second=59)
+
+            for _, event_row in df.iterrows():
+                duration = calculate_time_proportion(event_row, period_start, period_end)
+                if duration > 0:
+                    results.append({
+                        'date': day,
+                        'group': event_row['group'],
+                        'duration_hours': duration,
+                        'time_label': day.strftime('%Y-%m-%d')
+                    })
+
+        if results:
+            time_aggregation = pd.DataFrame(results)
+            time_aggregation = time_aggregation.groupby(['time_label', 'group']).agg(
+                duration_hours=('duration_hours', 'sum'),
+                date=('date', 'first')
+            ).reset_index()
+
     else:  # Month
-        time_aggregation['time_label'] = time_aggregation['month'].astype(str)
-        time_aggregation = time_aggregation[
-            (time_aggregation['month'] >= pd.Period(start_date, freq='M')) &
-            (time_aggregation['month'] <= pd.Period(end_date, freq='M'))
-        ]
+        # Generate all months in the selected range
+        months = []
+        current_date = date(start_date.year, start_date.month, 1)
+        while current_date <= end_date:
+            month_end = date(current_date.year, current_date.month, 
+                            calendar.monthrange(current_date.year, current_date.month)[1])
+            months.append({'month': pd.Period(current_date, freq='M'),
+                          'month_start': current_date,
+                          'month_end': month_end})
+            # Move to next month
+            if current_date.month == 12:
+                current_date = date(current_date.year + 1, 1, 1)
+            else:
+                current_date = date(current_date.year, current_date.month + 1, 1)
+
+        months_df = pd.DataFrame(months)
+
+        # Calculate duration for each event in each month
+        results = []
+        for _, month_row in months_df.iterrows():
+            period_start = pd.Timestamp(month_row['month_start'])
+            period_end = pd.Timestamp(month_row['month_end']).replace(hour=23, minute=59, second=59)
+
+            for _, event_row in df.iterrows():
+                duration = calculate_time_proportion(event_row, period_start, period_end)
+                if duration > 0:
+                    results.append({
+                        'month': month_row['month'],
+                        'group': event_row['group'],
+                        'duration_hours': duration,
+                        'time_label': str(month_row['month'])
+                    })
+
+        if results:
+            time_aggregation = pd.DataFrame(results)
+            time_aggregation = time_aggregation.groupby(['time_label', 'group']).agg(
+                duration_hours=('duration_hours', 'sum'),
+                month=('month', 'first')
+            ).reset_index()
 
     if time_aggregation.empty:
-        st.info(f"No data to display for the selected {time_unit.lower()} range.")
+        st.info(f"No data to display for the selected time range.")
         return
 
-    # Ensure 'time_label' exists even if filtering resulted in an empty DataFrame
-    if 'time_label' not in time_aggregation.columns:
-        time_aggregation['time_label'] = pd.Series(dtype='str') # Create an empty 'time_label' column
-
+    # Calculate percentages
     time_totals = time_aggregation.groupby('time_label')["duration_hours"].transform("sum")
     time_aggregation["percent"] = ((time_aggregation["duration_hours"] / time_totals.replace(0, pd.NA)) * 100).round(1).fillna(0)
+
+    time_unit = date_option.title()
 
     st.subheader(f"Relative Time per {time_unit} (100% Stacked)")
     st.caption(f"Showing events from {start_date} to {end_date}")
@@ -354,6 +441,11 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
 def show_weekday_hour_heatmap(df, start_date, end_date):
     st.subheader("Activity Heatmap (Weekday × Hour)")
     st.caption(f"Showing events from {start_date} to {end_date}")
+
+    # For multi-day events, we need to distribute their time appropriately
+    # We'll create a simplified version focusing on the start hour for each event
+
+    # Use the start hour and weekday for the heatmap (simplification)
     heatmap_data = df.groupby(["weekday", "hour"])["duration_hours"].sum().unstack(fill_value=0)
     heatmap_data = heatmap_data.reindex(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
     st.dataframe(heatmap_data.style.background_gradient(cmap="YlOrRd"))
