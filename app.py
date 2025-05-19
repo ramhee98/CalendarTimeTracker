@@ -21,7 +21,7 @@ def random_distinct_color(index, total_colors):
     color = "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
     return color
 
-@st.cache_data(ttl=86400)  # Cache for 24 hour (86400 seconds)
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def parse_ics_from_url(url, calendar_name):
     try:
         # Fetch .ics content
