@@ -51,7 +51,7 @@ df = df[
 # --- Summarize by group ---
 summary = (
     df.groupby("calendar")["duration_hours"]
-    .agg(Total_Hours="sum", Avg_Hours="mean", Event_Count="count")
+    .agg(Total_Hours="sum", Avg_Hours_Per_Event="mean", Event_Count="count")
     .reset_index()
 )
 
