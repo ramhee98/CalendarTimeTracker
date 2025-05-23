@@ -253,17 +253,42 @@ def preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, se
 def show_summary_table(df, start_date, end_date):
     st.subheader("Summary Table")
     st.caption(f"Showing events from {start_date} to {end_date}")
+
+    # Calculate total days and weeks in the selected range
+    days_span = (end_date - start_date).days + 1
+    weeks_span = days_span / 7
+
+    # Group and aggregate
     summary = (
         df.groupby("group")["duration_hours"]
         .agg(Total_Hours="sum", Average_Hours_Per_Event="mean", Event_Count="count")
         .reset_index()
     )
+
+    # Add percent share and per-day/week averages
     summary["Percent"] = (summary["Total_Hours"] / summary["Total_Hours"].sum() * 100).round(1)
-    summary = summary[["group", "Percent", "Total_Hours", "Average_Hours_Per_Event", "Event_Count"]]
+    summary["Avg_Per_Day"] = (summary["Total_Hours"] / days_span).round(2)
+    summary["Avg_Per_Week"] = (summary["Total_Hours"] / weeks_span).round(2)
+
+    # Reorder columns
+    summary = summary[[
+        "group",
+        "Percent",
+        "Total_Hours",
+        "Average_Hours_Per_Event",
+        "Avg_Per_Day",
+        "Avg_Per_Week",
+        "Event_Count"
+    ]]
     summary.rename(columns={"group": "Group"}, inplace=True)
+
+    # Show table and download button
     st.dataframe(summary)
     csv = summary.to_csv(index=False).encode("utf-8")
     st.download_button("Download Summary as CSV", csv, "summary.csv", "text/csv")
+
+    # Optional caption for context
+    st.caption(f"Range covers {days_span} days ≈ {weeks_span:.1f} weeks.")
 
 def show_duration_charts(df, start_date, end_date, group_mode, date_option):
     group_label = group_mode.title()  # "Calendar" or "Category"
