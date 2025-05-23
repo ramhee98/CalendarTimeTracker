@@ -10,6 +10,23 @@ st.set_page_config(page_title="Calendar Insights", layout="wide")
 st.title("Calendar Insights (ChatGPT-Powered)")
 st.caption("Understand how your time is distributed with AI-generated insights.")
 
+# --- OpenAI API setup ---
+env_path = ".env"
+# Create .env file with placeholder if it doesn't exist
+if not os.path.exists(env_path):
+    with open(env_path, "w") as f:
+        f.write("OPENAI_API_KEY=your-api-key-here\n")
+    print("✅ Created .env file with placeholder API key.")
+    st.error("Missing OpenAI API key. Set it in the .env file.")
+    st.stop()
+else:
+    load_dotenv()
+    if os.getenv("OPENAI_API_KEY") != "your-api-key-here":
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    else:
+        st.warning("⚠️ OpenAI API key not found. The Analyze page will not work.")
+        st.stop()
+
 # --- Load calendar data ---
 all_events, source_type = load_all_events()
 
@@ -58,20 +75,6 @@ Here is my calendar usage summary from {start_date} to {end_date}:
 
 Please analyze this and provide meaningful insights.
 """
-
-# --- OpenAI API setup ---
-env_path = ".env"
-# Create .env file with placeholder if it doesn't exist
-if not os.path.exists(env_path):
-    with open(env_path, "w") as f:
-        f.write("OPENAI_API_KEY=your-api-key-here\n")
-    print("✅ Created .env file with placeholder API key.")
-    st.error("Missing OpenAI API key. Set it in the .env file.")
-    st.stop()
-else:
-    load_dotenv()
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 
 # --- Analyze ---
 if st.button("🔍 Analyze with ChatGPT"):
