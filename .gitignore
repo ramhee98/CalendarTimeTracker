@@ -16,8 +16,8 @@ pip-wheel-metadata/
 .streamlit/config.toml
 
 # CalendarTimeTracker specific
-calendars.txt
-calendars.json
+*calendars*.txt
+*calendars*.json
 data/
 
 # VS Code
