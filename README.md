@@ -11,6 +11,7 @@
 - 📦 Summary tables with CSV export
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
 - 🎨 Custom calendar colors
+- 🔍 Calendar Insights (GPT-powered) Analyze page
 
 ## 🖼️ Screenshots
 
@@ -53,6 +54,7 @@ Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+Optionally an OpenAI API key with access to GPT models for further insights.
 
 ## 🛠 Installation
 
