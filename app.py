@@ -521,6 +521,12 @@ st.set_page_config(page_title="CalendarTimeTracker", layout="wide", initial_side
 st.title("CalendarTimeTracker")
 st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
 
+with st.sidebar:
+    st.markdown("### Options")
+    if st.button("Clear Cache"):
+        st.cache_data.clear()
+        st.success("Cache has been cleared. Please reload the page.")
+
 # Load events from all calendar URLs
 all_events, source_type = load_all_events()
 
