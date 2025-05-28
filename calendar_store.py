@@ -1,6 +1,7 @@
 import os
 import hashlib
 import pandas as pd
+from datetime import datetime, timedelta, timezone
 
 # Ensure event store directory exists
 os.makedirs("data", exist_ok=True)
@@ -26,18 +27,24 @@ def save_events_to_cache(url, df):
     path = get_cache_file_path(url)
     df.to_csv(path, index=False)
 
-def update_event_store(url, new_events_df):
+def update_event_store(url, new_events_df, cutoff_days=30):
     cached_df = load_cached_events(url)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(cutoff_days)
+
     if "uid" in new_events_df.columns:
-        # Remove old rows with same UID
+        # Only keep old events that are outside the replacement range
         if not cached_df.empty and "uid" in cached_df.columns:
-            cached_df = cached_df[~cached_df["uid"].isin(new_events_df["uid"])]
-        combined_df = pd.concat([cached_df, new_events_df], ignore_index=True)
-    else:
-        # Fallback deduplication if no UID
-        if not cached_df.empty:
-            combined_df = pd.concat([cached_df, new_events_df]).drop_duplicates(subset=["start", "end"])
+            old_df = cached_df[cached_df["start"] < cutoff]
+            # Replace recent and future events by dropping any matching UIDs
+            uids_to_keep = set(new_events_df["uid"])
+            old_df = old_df[~old_df["uid"].isin(uids_to_keep)]
         else:
-            combined_df = new_events_df
+            old_df = pd.DataFrame()
+
+        combined_df = pd.concat([old_df, new_events_df], ignore_index=True)
+    else:
+        combined_df = new_events_df  # fallback
+
     save_events_to_cache(url, combined_df)
     return combined_df
