@@ -102,6 +102,9 @@ The app will:
 - Time zone normalization is done as **naive** by default.
 - Duplicate events are filtered using the event `UID` field.
 - Caching reduces repeated loads for unchanged calendars.
+- Events from the **past 30 days and all future dates** are automatically re-synced with the source `.ics` file.
+  - If an event is **removed** from the source calendar, it will also be **removed from the local cache**.
+  - Events **older than 30 days** are preserved for historical reference, even if they no longer exist in the source.
 
 ## 🙌 Contribution
 
