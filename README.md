@@ -11,7 +11,7 @@
 - 📦 Summary tables with CSV export
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
 - 🎨 Custom calendar colors
-- 🔍 Calendar AI Insights (GPT-powered) page
+- 🔍 AI Insights page: Calendar AI Insights (ChatGPT-Powered)
 
 ## 🖼️ Screenshots
 
