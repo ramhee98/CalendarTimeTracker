@@ -6,8 +6,8 @@ from datetime import date
 from app import load_all_events, normalize_calendar_name, normalize_time, select_month_range
 from dotenv import load_dotenv
 
-st.set_page_config(page_title="Calendar Insights", layout="wide")
-st.title("Calendar Insights (ChatGPT-Powered)")
+st.set_page_config(page_title="AI Insights", layout="wide")
+st.title("Calendar AI Insights (ChatGPT-Powered)")
 st.caption("Understand how your time is distributed with AI-generated insights.")
 
 # --- OpenAI API setup ---
