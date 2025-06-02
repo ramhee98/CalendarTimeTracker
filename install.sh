@@ -5,7 +5,7 @@ git clone https://github.com/ramhee98/CalendarTimeTracker
 cd CalendarTimeTracker
 
 # Create a virtual environment
-python -m venv .venv
+python3 -m venv .venv
 
 # Activate the virtual environment
 source .venv/bin/activate
