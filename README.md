@@ -12,6 +12,7 @@
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
 - 🎨 Custom calendar colors
 - 🔍 AI Insights page: Calendar AI Insights (ChatGPT-Powered)
+- 📈 Trends page: visualize calendar activity over time using line and bar charts
 
 ## 🖼️ Screenshots
 
@@ -40,6 +41,17 @@ Visualize how time is distributed each month, normalized to 100%.
 See which calendar contributes most to your time allocation.
 
 ![Time Distribution Pie Chart](img/time-distribution-per-calendar.png)
+
+---
+
+### 📈 Trends Overview (New)
+
+Understand how your calendar activity evolves over time.
+
+- Switch between weekly, and monthly granularity
+- Useful for spotting workload peaks and recurring patterns
+
+![Trend Line Chart](img/trends-line-chart.png)
 
 ---
 
