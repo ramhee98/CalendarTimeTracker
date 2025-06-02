@@ -13,6 +13,11 @@ import colorsys
 from urllib.parse import urlparse
 import tzlocal
 
+# Streamlit UI
+st.set_page_config(page_title="CalendarTimeTracker", layout="wide", initial_sidebar_state='collapsed')
+st.title("CalendarTimeTracker")
+st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
+
 def random_distinct_color(index, total_colors):
     hue = (index / total_colors)  # Distribute hues evenly (0 to 1)
     saturation = 0.7  # Maintain vivid colors
@@ -515,11 +520,6 @@ def show_calendar_distribution_pie_chart(df, group_mode):
 if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"):
     shutil.copy("calendars.txt.sample", "calendars.txt")
     st.warning("No calendars.txt found. A sample file has been copied. Please update it with your calendar URLs and reload the page.")
-
-# Streamlit UI
-st.set_page_config(page_title="CalendarTimeTracker", layout="wide", initial_sidebar_state='collapsed')
-st.title("CalendarTimeTracker")
-st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
 
 with st.sidebar:
     st.markdown("### Options")
