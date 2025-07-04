@@ -74,13 +74,20 @@ summary.rename(columns={"group": group_label}, inplace=True)
 with st.expander("📋 Show summary data sent to ChatGPT"):
     st.dataframe(summary)
 
-# --- Prepare prompt ---
-system_prompt = (
+# --- Editable system prompt ---
+default_system_prompt = (
     "You are a helpful assistant that analyzes calendar data for time management. "
     f"Based on the following {group_label.lower()} usage summary, provide natural language insights: "
     "highlight which calendars take most time, when activity peaks, any imbalance or overbooking, and give simple time management tips."
 )
 
+system_prompt = st.text_area(
+    "🛠️ Customize AI assistant behavior",
+    value=default_system_prompt,
+    height=100
+)
+
+# --- Prepare user prompt ---
 summary_text = summary.to_string(index=False)
 
 user_prompt = f"""
