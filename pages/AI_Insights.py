@@ -99,11 +99,12 @@ Please analyze this and provide meaningful insights.
 """
 
 # --- Analyze ---
-if st.button("🔍 Analyze with ChatGPT"):
+model="gpt-4.1-mini"
+if st.button(f"🔍 Analyze with ChatGPT ({model})"):
     with st.spinner("Thinking..."):
         try:
             response = client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
