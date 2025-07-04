@@ -34,10 +34,24 @@ if not all_events:
     st.warning("No events available to analyze.")
     st.stop()
 
+# --- Choose grouping mode ---
+if source_type == "json":
+    group_mode = st.selectbox(
+        "View data by",
+        options=["calendar", "category"],
+        index=0,
+        format_func=str.title,
+        key="ai_view_mode",
+    )
+else:
+    group_mode = "calendar"
+group_label = group_mode.title()
+
 # --- Preprocess ---
 df = pd.DataFrame(all_events)
 df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
 df = normalize_time(df, tz="local")
+df["group"] = df[group_mode]
 
 start_date, end_date = select_month_range(df)
 
@@ -50,10 +64,11 @@ df = df[
 
 # --- Summarize by group ---
 summary = (
-    df.groupby("calendar")["duration_hours"]
+    df.groupby("group")["duration_hours"]
     .agg(Total_Hours="sum", Avg_Hours_Per_Event="mean", Event_Count="count")
     .reset_index()
 )
+summary.rename(columns={"group": group_label}, inplace=True)
 
 # --- Optional: show the raw summary ---
 with st.expander("📋 Show summary data sent to ChatGPT"):
@@ -62,16 +77,16 @@ with st.expander("📋 Show summary data sent to ChatGPT"):
 # --- Prepare prompt ---
 system_prompt = (
     "You are a helpful assistant that analyzes calendar data for time management. "
-    "Based on the following calendar usage summary, provide natural language insights: "
+    f"Based on the following {group_label.lower()} usage summary, provide natural language insights: "
     "highlight which calendars take most time, when activity peaks, any imbalance or overbooking, and give simple time management tips."
 )
 
-calendar_text = summary.to_string(index=False)
+summary_text = summary.to_string(index=False)
 
 user_prompt = f"""
-Here is my calendar usage summary from {start_date} to {end_date}:
+Here is my {group_label.lower()} usage summary from {start_date} to {end_date}:
 
-{calendar_text}
+{summary_text}
 
 Please analyze this and provide meaningful insights.
 """
