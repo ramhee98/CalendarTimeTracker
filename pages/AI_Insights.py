@@ -98,8 +98,21 @@ Here is my {group_label.lower()} usage summary from {start_date} to {end_date}:
 Please analyze this and provide meaningful insights.
 """
 
+verbosity = st.selectbox(
+    "Select verbosity level",
+    options=["low", "medium", "high"],
+    index=0,
+    help="Controls how detailed the response will be. Low is concise, medium is balanced, high is very detailed."
+)
+
+model = st.selectbox(
+    "Select model",
+    options=["gpt-5-nano", "gpt-5-mini", "gpt-5"],
+    index=0,
+    help="Choose the model to use for analysis. Higher models may provide better insights."
+)
+
 # --- Analyze ---
-model="gpt-4.1-mini"
 if st.button(f"🔍 Analyze with ChatGPT ({model})"):
     with st.spinner("Thinking..."):
         try:
@@ -109,8 +122,7 @@ if st.button(f"🔍 Analyze with ChatGPT ({model})"):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.7,
-                max_tokens=800
+                verbosity=verbosity
             )
             st.markdown("### 💬 ChatGPT Insights")
             st.markdown(response.choices[0].message.content)
