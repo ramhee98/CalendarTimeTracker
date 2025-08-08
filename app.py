@@ -18,6 +18,14 @@ st.set_page_config(page_title="CalendarTimeTracker", layout="wide", initial_side
 st.title("CalendarTimeTracker")
 st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
 
+def get_version():
+    """Read version from version.txt file"""
+    try:
+        with open("version.txt", "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "Unknown"
+
 def random_distinct_color(index, total_colors):
     hue = (index / total_colors)  # Distribute hues evenly (0 to 1)
     saturation = 0.7  # Maintain vivid colors
@@ -527,6 +535,12 @@ with st.sidebar:
         st.cache_data.clear()
         st.success("Cache has been cleared. Please reload the page.")
 
+    st.markdown("---")
+    st.markdown("### About")
+    version = get_version()
+    st.markdown(f"**Version:** {version}")
+    st.markdown("🔗 [GitHub Repository](https://github.com/ramhee98/CalendarTimeTracker)")
+
 # Load events from all calendar URLs
 all_events, source_type = load_all_events()
 
@@ -559,11 +573,3 @@ if all_events:
 
 else:
     st.warning("No events loaded from calendars.")
-
-st.markdown(
-    """
-    ---
-    🔗 [View project on GitHub](https://github.com/ramhee98/CalendarTimeTracker)
-    """,
-    unsafe_allow_html=True
-)
