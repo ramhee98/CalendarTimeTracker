@@ -26,6 +26,20 @@ def get_version():
     except FileNotFoundError:
         return "Unknown"
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def get_latest_github_version():
+    """Fetch the latest version from GitHub's version.txt file"""
+    try:
+        url = "https://raw.githubusercontent.com/ramhee98/CalendarTimeTracker/main/version.txt"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.text.strip()
+        else:
+            return "Unknown"
+    except Exception as e:
+        print(f"Error fetching GitHub version: {e}")
+        return "Unknown"
+
 def random_distinct_color(index, total_colors):
     hue = (index / total_colors)  # Distribute hues evenly (0 to 1)
     saturation = 0.7  # Maintain vivid colors
@@ -538,7 +552,14 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### About")
     version = get_version()
-    st.markdown(f"**Version:** {version}")
+    latest_version = get_latest_github_version()
+    
+    st.markdown(f"**Current Version:** {version}")
+    st.markdown(f"**Latest Version (cached):** {latest_version}")
+    
+    if version != "Unknown" and latest_version != "Unknown" and version < latest_version:
+        st.info("🔄 A newer version is available!")
+    
     st.markdown("🔗 [GitHub Repository](https://github.com/ramhee98/CalendarTimeTracker)")
 
 # Load events from all calendar URLs
