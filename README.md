@@ -5,14 +5,18 @@
 ## 🚀 Features
 
 - 📅 Load multiple calendars from `calendars.txt` or `calendars.json`
-- 📊 Visualize total and relative time spent per month
+- 📊 Visualize total and relative time spent per day, week, or month
 - 🔥 Activity heatmap (weekday × hour)
 - 🍰 Pie chart for calendar/category time distribution
-- 📦 Summary tables with CSV export
+- 📦 Summary tables with CSV export (includes averages per day/week)
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
 - 🎨 Custom calendar colors
 - 🔍 AI Insights page: Calendar AI Insights (ChatGPT-Powered)
 - 📈 Trends page: visualize calendar activity over time using line and bar charts
+- 📂 Import ICS page: Upload and import `.ics` files into existing calendars
+- 🗄️ Local data storage with intelligent caching and event deduplication
+- 🌍 Time zone normalization support
+- ⚡ Cache management with one-click cache clearing
 
 ## 🖼️ Screenshots
 
@@ -48,7 +52,7 @@ See which calendar contributes most to your time allocation.
 
 Understand how your calendar activity evolves over time.
 
-- Switch between weekly, and monthly granularity
+- Switch between daily, weekly, and monthly granularity
 - Useful for spotting workload peaks and recurring patterns
 
 ![Trend Line Chart](img/trends-line-chart.png)
@@ -111,12 +115,15 @@ The app will:
 
 ## 🧠 Notes
 
-- Time zone normalization is done as **naive** by default.
+- Time zone normalization supports local, UTC, and naive modes.
 - Duplicate events are filtered using the event `UID` field.
-- Caching reduces repeated loads for unchanged calendars.
+- Intelligent caching reduces repeated loads for unchanged calendars.
+- Multi-day events are properly handled with proportional time distribution.
 - Events from the **past 30 days and all future dates** are automatically re-synced with the source `.ics` file.
   - If an event is **removed** from the source calendar, it will also be **removed from the local cache**.
   - Events **older than 30 days** are preserved for historical reference, even if they no longer exist in the source.
+- Version checking automatically notifies you of updates from GitHub.
+- Summary tables include per-day and per-week averages for better insights.
 
 ## 🙌 Contribution
 
