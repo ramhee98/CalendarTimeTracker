@@ -47,6 +47,15 @@ else:
     group_mode = "calendar"
 group_label = group_mode.title()
 
+# --- Choose time grouping ---
+time_group = st.radio(
+    "Time grouping",
+    options=["day", "week", "month"],
+    index=2,
+    horizontal=True,
+    help="Choose how to group the data by time periods"
+)
+
 # --- Preprocess ---
 df = pd.DataFrame(all_events)
 df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
@@ -62,13 +71,21 @@ df = df[
     ((df["start"].dt.date <= start_date) & (df["end"].dt.date >= end_date))
 ]
 
-# --- Summarize by group ---
+# --- Add time grouping column ---
+if time_group == "day":
+    df["time_period"] = df["start"].dt.date
+elif time_group == "week":
+    df["time_period"] = df["start"].dt.to_period("W").astype(str)
+elif time_group == "month":
+    df["time_period"] = df["start"].dt.to_period("M").astype(str)
+
+# --- Summarize by group and time period ---
 summary = (
-    df.groupby("group")["duration_hours"]
+    df.groupby(["group", "time_period"])["duration_hours"]
     .agg(Total_Hours="sum", Avg_Hours_Per_Event="mean", Event_Count="count")
     .reset_index()
 )
-summary.rename(columns={"group": group_label}, inplace=True)
+summary.rename(columns={"group": group_label, "time_period": f"Time Period ({time_group.title()})"}, inplace=True)
 
 # --- Optional: show the raw summary ---
 with st.expander("📋 Show summary data sent to ChatGPT"):
@@ -77,8 +94,8 @@ with st.expander("📋 Show summary data sent to ChatGPT"):
 # --- Editable system prompt ---
 default_system_prompt = (
     "You are a helpful assistant that analyzes calendar data for time management. "
-    f"Based on the following {group_label.lower()} usage summary, provide natural language insights: "
-    "highlight which calendars take most time, when activity peaks, any imbalance or overbooking, and give simple time management tips."
+    f"Based on the following {group_label.lower()} usage summary grouped by {time_group}, provide natural language insights: "
+    "highlight patterns over time, which calendars take most time in different periods, trends and changes, any imbalance or overbooking, and give simple time management tips."
 )
 
 system_prompt = st.text_area(
@@ -91,11 +108,11 @@ system_prompt = st.text_area(
 summary_text = summary.to_string(index=False)
 
 user_prompt = f"""
-Here is my {group_label.lower()} usage summary from {start_date} to {end_date}:
+Here is my {group_label.lower()} usage summary grouped by {time_group} from {start_date} to {end_date}:
 
 {summary_text}
 
-Please analyze this and provide meaningful insights.
+Please analyze this and provide meaningful insights about patterns over time and time management.
 """
 
 verbosity = st.selectbox(
