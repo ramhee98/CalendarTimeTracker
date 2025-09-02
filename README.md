@@ -11,7 +11,7 @@
 - 📦 Summary tables with CSV export (includes averages per day/week)
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
 - 🎨 Custom calendar colors
-- 🔍 AI Insights page: Calendar AI Insights (ChatGPT-Powered)
+- 🔍 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📈 Trends page: visualize calendar activity over time using line and bar charts
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🗄️ Local data storage with intelligent caching and event deduplication
@@ -48,7 +48,7 @@ See which calendar contributes most to your time allocation.
 
 ---
 
-### 📈 Trends Overview (New)
+### 📈 Trends Overview
 
 Understand how your calendar activity evolves over time.
 
@@ -56,6 +56,18 @@ Understand how your calendar activity evolves over time.
 - Useful for spotting workload peaks and recurring patterns
 
 ![Trend Line Chart](img/trends-line-chart.png)
+
+---
+
+### 🧠 AI Insights (ChatGPT-Powered)
+
+Get intelligent analysis of your calendar data with AI-powered insights.
+
+- **Time Grouping**: Analyze patterns by day, week, or month
+- **Temporal Analysis**: Identify trends and patterns over time periods
+- **Smart Insights**: AI provides recommendations for time management and workload optimization
+- **Customizable Prompts**: Modify the AI assistant behavior to focus on specific aspects
+- **Multiple Models**: Choose from different GPT model variants for analysis depth
 
 ---
 
