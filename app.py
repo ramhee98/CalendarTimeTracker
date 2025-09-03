@@ -18,6 +18,10 @@ st.set_page_config(page_title="CalendarTimeTracker", layout="wide", initial_side
 st.title("CalendarTimeTracker")
 st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
 
+# Add performance improvements
+if "main_app_loaded" not in st.session_state:
+    st.session_state.main_app_loaded = False
+
 def get_version():
     """Read version from version.txt file"""
     try:
@@ -26,7 +30,7 @@ def get_version():
     except FileNotFoundError:
         return "Unknown"
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.cache_data(ttl=3600, show_spinner="Fetching latest version from GitHub...")  # Cache for 1 hour
 def get_latest_github_version():
     """Fetch the latest version from GitHub's version.txt file"""
     try:
@@ -48,7 +52,7 @@ def random_distinct_color(index, total_colors):
     color = "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
     return color
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.cache_data(ttl=3600, show_spinner="Loading calendar data...")  # Cache for 1 hour
 def parse_ics_from_url(url, calendar_name):
     try:
         # Fetch .ics content
@@ -544,12 +548,6 @@ if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"
     st.warning("No calendars.txt found. A sample file has been copied. Please update it with your calendar URLs and reload the page.")
 
 with st.sidebar:
-    st.markdown("### Options")
-    if st.button("Clear Cache"):
-        st.cache_data.clear()
-        st.success("Cache has been cleared. Please reload the page.")
-
-    st.markdown("---")
     st.markdown("### About")
     version = get_version()
     latest_version = get_latest_github_version()
@@ -562,8 +560,20 @@ with st.sidebar:
     
     st.markdown("🔗 [GitHub Repository](https://github.com/ramhee98/CalendarTimeTracker)")
 
+# --- Cache management ---
+col1, col2 = st.columns([3, 1])
+with col2:
+    if st.button("🔄 Refresh Data", help="Clear cache and reload calendar data"):
+        st.cache_data.clear()
+        st.session_state.main_app_loaded = False
+        st.rerun()
+
 # Load events from all calendar URLs
-all_events, source_type = load_all_events()
+with st.spinner("Loading and processing calendar events..."):
+    all_events, source_type = load_all_events()
+
+# Mark main app as loaded
+st.session_state.main_app_loaded = True
 
 if all_events:
     # Optional selector (only if JSON is used)
@@ -577,8 +587,12 @@ if all_events:
         )
     else:
         group_mode = "calendar"
-    df, start_date, end_date = preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range)
-    df["group"] = df[group_mode]
+    
+    # Process data with progress indicator
+    with st.spinner("Processing and filtering calendar data..."):
+        df, start_date, end_date = preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range)
+        df["group"] = df[group_mode]
+    
     show_summary_table(df, start_date, end_date)
 
     st.subheader(f"Relative Time Charts")
@@ -588,9 +602,12 @@ if all_events:
         index=0,
         horizontal=True
     )
-    show_duration_charts(df, start_date, end_date, group_mode, date_option)
-    show_weekday_hour_heatmap(df, start_date, end_date)
-    show_calendar_distribution_pie_chart(df, group_mode)
+    
+    # Show charts with progress indicator
+    with st.spinner("Generating charts..."):
+        show_duration_charts(df, start_date, end_date, group_mode, date_option)
+        show_weekday_hour_heatmap(df, start_date, end_date)
+        show_calendar_distribution_pie_chart(df, group_mode)
 
 else:
     st.warning("No events loaded from calendars.")

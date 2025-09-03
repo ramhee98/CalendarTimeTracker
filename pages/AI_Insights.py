@@ -10,6 +10,10 @@ st.set_page_config(page_title="AI Insights", layout="wide")
 st.title("Calendar AI Insights (ChatGPT-Powered)")
 st.caption("Understand how your time is distributed with AI-generated insights.")
 
+# Add loading state management
+if "ai_insights_loaded" not in st.session_state:
+    st.session_state.ai_insights_loaded = False
+
 # --- OpenAI API setup ---
 env_path = ".env"
 # Create .env file with placeholder if it doesn't exist
@@ -27,12 +31,24 @@ else:
         st.warning("⚠️ OpenAI API key not found. The Analyze page will not work.")
         st.stop()
 
+# --- Cache management ---
+col1, col2 = st.columns([3, 1])
+with col2:
+    if st.button("🔄 Refresh Data", help="Clear cache and reload calendar data"):
+        st.cache_data.clear()
+        st.session_state.ai_insights_loaded = False
+        st.rerun()
+
 # --- Load calendar data ---
-all_events, source_type = load_all_events()
+with st.spinner("Loading calendar data..."):
+    all_events, source_type = load_all_events()
 
 if not all_events:
     st.warning("No events available to analyze.")
     st.stop()
+
+# Mark as loaded
+st.session_state.ai_insights_loaded = True
 
 # --- Choose grouping mode ---
 if source_type == "json":
@@ -57,12 +73,13 @@ time_group = st.radio(
 )
 
 # --- Preprocess ---
-df = pd.DataFrame(all_events)
-df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
-df = normalize_time(df, tz="local")
-df["group"] = df[group_mode]
+with st.spinner("Processing calendar data..."):
+    df = pd.DataFrame(all_events)
+    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
+    df = normalize_time(df, tz="local")
+    df["group"] = df[group_mode]
 
-start_date, end_date = select_month_range(df)
+    start_date, end_date = select_month_range(df)
 
 # Filter range
 df = df[

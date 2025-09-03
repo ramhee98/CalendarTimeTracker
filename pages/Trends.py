@@ -8,15 +8,32 @@ st.set_page_config(page_title="Trend Charts", layout="wide")
 st.title("Calendar Trends Overview")
 st.caption("Visualize how your calendar or category usage changes over time.")
 
-# --- Load events ---
-all_events, source_type = load_all_events()
-if not all_events:
-    st.warning("No events available.")
-    st.stop()
+# Add performance improvements
+if "trends_loaded" not in st.session_state:
+    st.session_state.trends_loaded = False
 
-df = pd.DataFrame(all_events)
-df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
-df = normalize_time(df, tz="local")
+# --- Cache management ---
+col1, col2 = st.columns([3, 1])
+with col2:
+    if st.button("🔄 Refresh Data", help="Clear cache and reload data"):
+        st.cache_data.clear()
+        st.session_state.trends_loaded = False
+        st.rerun()
+
+# --- Load events ---
+with st.spinner("Loading calendar data for trends analysis..."):
+    all_events, source_type = load_all_events()
+    if not all_events:
+        st.warning("No events available.")
+        st.stop()
+
+# Mark as loaded
+st.session_state.trends_loaded = True
+
+with st.spinner("Processing calendar data..."):
+    df = pd.DataFrame(all_events)
+    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
+    df = normalize_time(df, tz="local")
 
 # --- View selector like app.py, shown on top ---
 if source_type == "json":
@@ -33,14 +50,15 @@ else:
 df["group"] = df[group_mode]
 
 # --- Select date range after group mode ---
-start_date, end_date = select_month_range(df)
+with st.spinner("Applying date filters..."):
+    start_date, end_date = select_month_range(df)
 
-# Filter by date range
-df = df[
-    ((df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)) |
-    ((df["end"].dt.date >= start_date) & (df["end"].dt.date <= end_date)) |
-    ((df["start"].dt.date <= start_date) & (df["end"].dt.date >= end_date))
-]
+    # Filter by date range
+    df = df[
+        ((df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)) |
+        ((df["end"].dt.date >= start_date) & (df["end"].dt.date <= end_date)) |
+        ((df["start"].dt.date <= start_date) & (df["end"].dt.date >= end_date))
+    ]
 
 # --- Granularity selector ---
 granularity = st.radio("Time granularity:", ["Month", "Week"], horizontal=True)

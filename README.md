@@ -16,7 +16,9 @@
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🗄️ Local data storage with intelligent caching and event deduplication
 - 🌍 Time zone normalization support
-- ⚡ Cache management with one-click cache clearing
+- ⚡ Performance optimizations with enhanced caching and loading states
+- 🔄 Smart session management with page-specific loading indicators
+- 💫 Improved user experience with progress spinners and cache management
 
 ## 🖼️ Screenshots
 
@@ -45,6 +47,27 @@ Visualize how time is distributed each month, normalized to 100%.
 See which calendar contributes most to your time allocation.
 
 ![Time Distribution Pie Chart](img/time-distribution-per-calendar.png)
+
+---
+
+## ⚡ Performance Enhancements
+
+CalendarTimeTracker v1.04 introduces significant performance improvements:
+
+### 🚀 Smart Caching & Loading
+- **Enhanced Cache Management**: Improved caching with informative loading spinners
+- **Session State Optimization**: Page-specific loading states prevent unnecessary reprocessing
+- **User-Friendly Progress Indicators**: Clear feedback during data loading, processing, and chart generation
+
+### 🔄 Improved User Experience
+- **Prominent Refresh Button**: Easy one-click cache clearing and data reload
+- **Loading State Management**: Prevents UI blocking during heavy operations
+- **Consistent Performance Patterns**: All pages follow optimized loading strategies
+
+### 📊 Optimized Data Processing
+- **Progressive Loading**: Data is loaded and processed in stages with visual feedback
+- **Memory Efficiency**: Better session state management reduces memory footprint
+- **Faster Navigation**: Cached results enable quicker page transitions
 
 ---
 
