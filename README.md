@@ -129,6 +129,14 @@ Supports rich metadata like category assignment and custom calendar colors.
 
 If `calendars.json` is present, it will be used automatically and enables category-based grouping.
 
+### AI Configuration: `ai_config.json`
+
+Configure AI analysis behavior by creating an `ai_config.json` file (see `ai_config.json.sample` for reference):
+
+- **Custom Prompts**: Define different analysis styles (detailed, quick summary, productivity focus, etc.)
+- **UI Settings**: Control prompt customization and display options
+- **Auto-Configuration**: If `ai_config.json` is missing, it will be automatically created from `ai_config.json.sample`
+
 ## ▶️ Running the App
 
 ```bash

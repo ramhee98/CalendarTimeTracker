@@ -19,6 +19,7 @@ pip-wheel-metadata/
 *calendars*.txt
 *calendars*.json
 data/
+ai_config.json
 
 # VS Code
 .vscode/
