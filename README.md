@@ -14,7 +14,8 @@
 - 🔍 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📈 Trends page: visualize calendar activity over time using line and bar charts
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
-- 🗄️ Local data storage with intelligent caching and event deduplication
+- � Social Analysis page: Analyze who you spend the most time with
+- �🗄️ Local data storage with intelligent caching and event deduplication
 - 🌍 Time zone normalization support
 - ⚡ Performance optimizations with enhanced caching and loading states
 - 🔄 Smart session management with page-specific loading indicators
@@ -98,6 +99,24 @@ Get intelligent analysis of your calendar data with AI-powered insights.
 Upload `.ics` files and assign them to specific calendars configured via `calendars.json` or `calendars.txt`.
 
 ![Import ICS File](img/import-ics.png)
+
+---
+
+### 👥 Social Analysis
+
+Analyze who you spend the most time with based on calendar event titles.
+
+- **Track People**: Add names to track and see total hours spent with each person
+- **Discover Names**: Automatically find frequently occurring words in your events
+- **Date Filtering**: Analyze specific time periods
+- **Event Details**: See all events for each tracked person
+- **Last Seen**: Track when you last met with each person
+- **Flexible Matching**: Use first names for broad matching or full names for specific matching
+- **Exclude Patterns**: Filter out generic events like "team meeting" or "community time"
+- **Hide from Discover**: Hide irrelevant words from the discovery list without excluding events
+- **Persistent Settings**: All configurations saved to `social_analysis_settings.json`
+
+---
 
 ## 📦 Requirements
 Install dependencies:

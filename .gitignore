@@ -21,6 +21,7 @@ pip-wheel-metadata/
 data/
 ai_config.json
 ai_responses_cache.json
+social_analysis_settings.json
 
 # VS Code
 .vscode/
