@@ -103,37 +103,86 @@ def fetch_calendar_events(url, calendar_name):
         return []
 
 # --- Analysis functions ---
+def parse_person_entry(entry):
+    """Parse a person entry that may contain aliases.
+    
+    Format: 'PrimaryName, Alias1, Alias2...' (comma-separated)
+    Returns: (primary_name, [all_names_including_primary])
+    """
+    parts = [p.strip() for p in entry.split(',') if p.strip()]
+    if not parts:
+        return None, []
+    primary = parts[0]
+    all_names = parts  # All parts are valid names to match
+    return primary, all_names
+
 def extract_people_from_title(title, known_people, ignore_partial_names=False):
-    """Extract people mentioned in an event title."""
+    """Extract people mentioned in an event title.
+    
+    known_people entries can contain aliases: 'Niclas Nic' means both
+    'Niclas' and 'Nic' refer to the same person (displayed as 'Niclas').
+    """
     title_lower = title.lower()
     found_people = []
     
-    for person in known_people:
-        person_lower = person.lower().strip()
-        if not person_lower:
+    for person_entry in known_people:
+        primary_name, all_names = parse_person_entry(person_entry)
+        if not primary_name:
             continue
-        # Check for whole word match
-        pattern = r'\b' + re.escape(person_lower) + r'\b'
-        if re.search(pattern, title_lower):
-            found_people.append(person)
+        
+        # Check if any of the names (primary or aliases) match
+        for name in all_names:
+            name_lower = name.lower()
+            pattern = r'\b' + re.escape(name_lower) + r'\b'
+            if re.search(pattern, title_lower):
+                # Use the full entry as the key (to keep aliases grouped)
+                if person_entry not in found_people:
+                    found_people.append(person_entry)
+                break  # Found a match for this person, no need to check other aliases
     
     # Filter out partial names if a longer name containing them is also found
     if ignore_partial_names and len(found_people) > 1:
         filtered_people = []
-        for person in found_people:
-            person_lower = person.lower()
-            # Check if this person's name is part of another found person's name
+        for person_entry in found_people:
+            _, all_names = parse_person_entry(person_entry)
+            # Check if any of this person's names is part of another found person's names
             is_partial = False
-            for other in found_people:
-                other_lower = other.lower()
-                if person_lower != other_lower and person_lower in other_lower.split():
-                    is_partial = True
+            for other_entry in found_people:
+                if person_entry == other_entry:
+                    continue
+                _, other_names = parse_person_entry(other_entry)
+                for name in all_names:
+                    name_lower = name.lower()
+                    for other_name in other_names:
+                        other_lower = other_name.lower()
+                        # Check if this name is a part of a multi-word other name
+                        if ' ' in other_entry.lower() and name_lower in other_entry.lower().split():
+                            is_partial = True
+                            break
+                    if is_partial:
+                        break
+                if is_partial:
                     break
             if not is_partial:
-                filtered_people.append(person)
+                filtered_people.append(person_entry)
         return filtered_people
     
     return found_people
+
+def get_display_name(person_entry, include_aliases=False):
+    """Get the display name from a person entry.
+    
+    If include_aliases=True, returns 'Primary (Alias1, Alias2)' format.
+    """
+    primary, all_names = parse_person_entry(person_entry)
+    if not primary:
+        return person_entry
+    
+    if include_aliases and len(all_names) > 1:
+        aliases = all_names[1:]  # Everything after the primary name
+        return f"{primary} ({', '.join(aliases)})"
+    
+    return primary
 
 def should_exclude(title, exclude_patterns):
     """Check if an event should be excluded."""
@@ -205,7 +254,7 @@ with st.sidebar:
     
     # --- Known People Management ---
     st.subheader("👤 Known People")
-    st.caption("Names to track (one per line)")
+    st.caption("Names to track (one per line). Add aliases with comma: 'Niclas, Nic'")
     
     known_people_text = st.text_area(
         "People to track",
@@ -394,8 +443,9 @@ if all_events:
                     # Calculate median duration
                     durations = [evt['duration'] for evt in person_events]
                     median_duration = sorted(durations)[len(durations) // 2] if durations else 0
+                    display_name = get_display_name(person, include_aliases=True)
                     results.append({
-                        "Person": person.title(),
+                        "Person": display_name.title(),
                         "Hours": round(hours, 1),
                         "Events": event_count,
                         "Avg Hours/Event": round(hours / event_count, 1) if event_count > 0 else 0,
@@ -413,8 +463,9 @@ if all_events:
                 
                 # Expandable details per person
                 st.subheader("📋 Event Details")
-                for person in sorted(time_per_person.keys(), key=lambda x: x.lower()):
-                    with st.expander(f"{person.title()} - {len(events_per_person[person])} events"):
+                for person in sorted(time_per_person.keys(), key=lambda x: get_display_name(x).lower()):
+                    display_name = get_display_name(person, include_aliases=True)
+                    with st.expander(f"{display_name.title()} - {len(events_per_person[person])} events"):
                         person_events = events_per_person[person]
                         for evt in sorted(person_events, key=lambda x: x['date'], reverse=True):
                             st.write(f"• **{evt['title']}** - {evt['date'].strftime('%Y-%m-%d')} ({evt['duration']:.1f}h)")
@@ -430,8 +481,12 @@ if all_events:
         potential_names = find_potential_names(df_filtered, exclude_patterns, min_occurrences)
         
         if potential_names:
-            # Filter out already known people and hidden words
-            known_lower = [p.lower() for p in known_people]
+            # Build list of all known names including aliases
+            all_known_names_lower = []
+            for person_entry in known_people:
+                _, all_names = parse_person_entry(person_entry)
+                all_known_names_lower.extend([n.lower() for n in all_names])
+            
             hidden_lower = [h.lower() for h in hide_from_discover]
             
             # Option to ignore partial names that are part of known full names
@@ -444,14 +499,14 @@ if all_events:
             def is_partial_of_known(word):
                 """Check if word is a part of any known person's full name."""
                 word_lower = word.lower()
-                for known in known_lower:
+                for known in all_known_names_lower:
                     # Check if word is a part of a multi-word name (but not the full name itself)
                     if ' ' in known and word_lower in known.split() and word_lower != known:
                         return True
                 return False
             
             new_potentials = {k: v for k, v in potential_names.items() 
-                            if k.lower() not in known_lower 
+                            if k.lower() not in all_known_names_lower 
                             and k.lower() not in hidden_lower
                             and not (hide_partial_names and is_partial_of_known(k))}
             

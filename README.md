@@ -106,6 +106,7 @@ Upload `.ics` files and assign them to specific calendars configured via `calend
 Analyze who you spend the most time with based on calendar event titles.
 
 - **Track People**: Add names to track and see total hours spent with each person
+- **Aliases/Nicknames**: Add comma-separated aliases (e.g., "Niclas, Nic") to group variations
 - **Discover Names**: Automatically find frequently occurring words in your events
 - **Date Filtering**: Analyze specific time periods with month/year selectors
 - **Event Details**: See all events for each tracked person (sorted A-Z)
