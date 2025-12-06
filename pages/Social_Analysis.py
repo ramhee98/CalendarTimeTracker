@@ -405,8 +405,27 @@ if all_events:
             # Filter out already known people and hidden words
             known_lower = [p.lower() for p in known_people]
             hidden_lower = [h.lower() for h in hide_from_discover]
+            
+            # Option to ignore partial names that are part of known full names
+            hide_partial_names = st.checkbox(
+                "Hide partial names", 
+                value=True,
+                help="Hide words that are part of a known person's name (e.g., hide 'John' if 'John Doe' is tracked)"
+            )
+            
+            def is_partial_of_known(word):
+                """Check if word is a part of any known person's full name."""
+                word_lower = word.lower()
+                for known in known_lower:
+                    # Check if word is a part of a multi-word name (but not the full name itself)
+                    if ' ' in known and word_lower in known.split() and word_lower != known:
+                        return True
+                return False
+            
             new_potentials = {k: v for k, v in potential_names.items() 
-                            if k.lower() not in known_lower and k.lower() not in hidden_lower}
+                            if k.lower() not in known_lower 
+                            and k.lower() not in hidden_lower
+                            and not (hide_partial_names and is_partial_of_known(k))}
             
             if new_potentials:
                 # Use a form to batch add people without reloading
