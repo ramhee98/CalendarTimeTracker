@@ -22,7 +22,8 @@ def load_settings():
         "known_people": [],
         "exclude_patterns": [],
         "hide_from_discover": [],
-        "selected_calendars": []
+        "selected_calendars": [],
+        "ignore_partial_names": True
     }
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -102,7 +103,7 @@ def fetch_calendar_events(url, calendar_name):
         return []
 
 # --- Analysis functions ---
-def extract_people_from_title(title, known_people):
+def extract_people_from_title(title, known_people, ignore_partial_names=False):
     """Extract people mentioned in an event title."""
     title_lower = title.lower()
     found_people = []
@@ -115,6 +116,22 @@ def extract_people_from_title(title, known_people):
         pattern = r'\b' + re.escape(person_lower) + r'\b'
         if re.search(pattern, title_lower):
             found_people.append(person)
+    
+    # Filter out partial names if a longer name containing them is also found
+    if ignore_partial_names and len(found_people) > 1:
+        filtered_people = []
+        for person in found_people:
+            person_lower = person.lower()
+            # Check if this person's name is part of another found person's name
+            is_partial = False
+            for other in found_people:
+                other_lower = other.lower()
+                if person_lower != other_lower and person_lower in other_lower.split():
+                    is_partial = True
+                    break
+            if not is_partial:
+                filtered_people.append(person)
+        return filtered_people
     
     return found_people
 
@@ -129,7 +146,7 @@ def should_exclude(title, exclude_patterns):
             return True
     return False
 
-def analyze_time_with_people(df, known_people, exclude_patterns):
+def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_names=False):
     """Analyze time spent with each person."""
     time_per_person = defaultdict(float)
     events_per_person = defaultdict(list)
@@ -142,7 +159,7 @@ def analyze_time_with_people(df, known_people, exclude_patterns):
         if should_exclude(title, exclude_patterns):
             continue
         
-        people = extract_people_from_title(title, known_people)
+        people = extract_people_from_title(title, known_people, ignore_partial_names)
         
         for person in people:
             time_per_person[person] += duration
@@ -222,6 +239,15 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     
+    # --- Ignore Partial Names Setting ---
+    st.subheader("🔤 Name Matching")
+    ignore_partial_names = st.checkbox(
+        "Ignore partial names",
+        value=st.session_state.settings.get("ignore_partial_names", True),
+        help="If 'john doe' and 'john' are both tracked, events with 'john doe' won't count for 'john'",
+        key="ignore_partial_names_input"
+    )
+    
     # Save button
     if st.button("💾 Save Settings", use_container_width=True):
         # Parse the text areas into lists
@@ -232,6 +258,7 @@ with st.sidebar:
         st.session_state.settings["known_people"] = new_known_people
         st.session_state.settings["exclude_patterns"] = new_exclude_patterns
         st.session_state.settings["hide_from_discover"] = new_hide_from_discover
+        st.session_state.settings["ignore_partial_names"] = ignore_partial_names
         
         if save_settings(st.session_state.settings):
             st.success("Settings saved!")
@@ -342,6 +369,7 @@ if all_events:
         known_people = st.session_state.settings.get("known_people", [])
         exclude_patterns = st.session_state.settings.get("exclude_patterns", [])
         hide_from_discover = st.session_state.settings.get("hide_from_discover", [])
+        ignore_partial_names = st.session_state.settings.get("ignore_partial_names", True)
         
         # Time Spent with People section
         st.subheader("⏱️ Time Spent with People")
@@ -350,7 +378,7 @@ if all_events:
             st.warning("Add people to track in the sidebar settings")
         else:
             time_per_person, events_per_person = analyze_time_with_people(
-                df_filtered, known_people, exclude_patterns
+                df_filtered, known_people, exclude_patterns, ignore_partial_names
             )
             
             if not time_per_person:
