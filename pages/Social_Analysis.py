@@ -363,11 +363,15 @@ if all_events:
                     # Find most recent event date
                     person_events = events_per_person[person]
                     last_seen = max(evt['date'] for evt in person_events).strftime('%Y-%m-%d')
+                    # Calculate median duration
+                    durations = [evt['duration'] for evt in person_events]
+                    median_duration = sorted(durations)[len(durations) // 2] if durations else 0
                     results.append({
                         "Person": person.title(),
                         "Hours": round(hours, 1),
                         "Events": event_count,
                         "Avg Hours/Event": round(hours / event_count, 1) if event_count > 0 else 0,
+                        "Median Hours/Event": round(median_duration, 1),
                         "Last Seen": last_seen
                     })
                 
