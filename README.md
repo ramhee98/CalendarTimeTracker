@@ -14,8 +14,7 @@
 - 🔍 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📈 Trends page: visualize calendar activity over time using line and bar charts
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
-- � Social Analysis page: Analyze who you spend the most time with
-- �🗄️ Local data storage with intelligent caching and event deduplication
+- 👥 Social Analysis page: Analyze who you spend the most time with
 - 🌍 Time zone normalization support
 - ⚡ Performance optimizations with enhanced caching and loading states
 - 🔄 Smart session management with page-specific loading indicators
@@ -108,13 +107,14 @@ Analyze who you spend the most time with based on calendar event titles.
 
 - **Track People**: Add names to track and see total hours spent with each person
 - **Discover Names**: Automatically find frequently occurring words in your events
-- **Date Filtering**: Analyze specific time periods
-- **Event Details**: See all events for each tracked person
+- **Date Filtering**: Analyze specific time periods with month/year selectors
+- **Event Details**: See all events for each tracked person (sorted A-Z)
+- **Statistics**: View hours, event count, average and median duration per person
 - **Last Seen**: Track when you last met with each person
-- **Flexible Matching**: Use first names for broad matching or full names for specific matching
+- **Ignore Partial Names**: Prevent "john" from matching events with "john doe" when both are tracked
 - **Exclude Patterns**: Filter out generic events like "team meeting" or "community time"
 - **Hide from Discover**: Hide irrelevant words from the discovery list without excluding events
-- **Persistent Settings**: All configurations saved to `social_analysis_settings.json`
+- **Persistent Settings**: All configurations saved to `social_analysis_settings.json` (sorted alphabetically)
 
 ---
 
