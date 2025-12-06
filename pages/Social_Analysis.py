@@ -209,7 +209,7 @@ with st.sidebar:
     
     known_people_text = st.text_area(
         "People to track",
-        value="\n".join(st.session_state.settings.get("known_people", [])),
+        value="\n".join(sorted(st.session_state.settings.get("known_people", []), key=str.lower)),
         height=150,
         key="known_people_input",
         label_visibility="collapsed"
@@ -221,7 +221,7 @@ with st.sidebar:
     
     exclude_patterns_text = st.text_area(
         "Patterns to exclude",
-        value="\n".join(st.session_state.settings.get("exclude_patterns", [])),
+        value="\n".join(sorted(st.session_state.settings.get("exclude_patterns", []), key=str.lower)),
         height=100,
         key="exclude_patterns_input",
         label_visibility="collapsed"
@@ -233,7 +233,7 @@ with st.sidebar:
     
     hide_from_discover_text = st.text_area(
         "Words to hide",
-        value="\n".join(st.session_state.settings.get("hide_from_discover", [])),
+        value="\n".join(sorted(st.session_state.settings.get("hide_from_discover", []), key=str.lower)),
         height=100,
         key="hide_from_discover_input",
         label_visibility="collapsed"
