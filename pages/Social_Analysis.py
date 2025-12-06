@@ -385,7 +385,7 @@ if all_events:
                 
                 # Expandable details per person
                 st.subheader("📋 Event Details")
-                for person in sorted(time_per_person.keys(), key=lambda x: time_per_person[x], reverse=True):
+                for person in sorted(time_per_person.keys(), key=lambda x: x.lower()):
                     with st.expander(f"{person.title()} - {len(events_per_person[person])} events"):
                         person_events = events_per_person[person]
                         for evt in sorted(person_events, key=lambda x: x['date'], reverse=True):
