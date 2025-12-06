@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 from ics import Calendar
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from collections import defaultdict
 import re
 import json
 import os
 import requests
+import calendar
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
 st.title("👥 Social Time Analysis")
@@ -295,14 +296,41 @@ if all_events:
     else:
         st.divider()
         
-        # Date filter
-        col1, col2 = st.columns(2)
+        # Month range selection (same as main app)
+        min_date = df['start'].min().date()
+        max_date = df['start'].max().date()
+        
+        years = list(range(min_date.year, max_date.year + 1))
+        months = list(range(1, 13))
+        now = datetime.now()
+        
+        start_month_default = 1
+        end_month_default = now.month
+        start_year_default = end_year_default = now.year
+        
+        st.subheader("Select Month Range")
+        
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            min_date = df['start'].min().date()
-            start_date = st.date_input("From date", value=min_date, min_value=min_date)
+            start_month = st.selectbox("Start Month", months, index=start_month_default - 1, format_func=lambda m: calendar.month_name[m])
         with col2:
-            max_date = df['start'].max().date()
-            end_date = st.date_input("To date", value=max_date, max_value=max_date)
+            start_year = st.selectbox("Start Year", years, index=years.index(start_year_default) if start_year_default in years else 0)
+        with col3:
+            end_month = st.selectbox("End Month", months, index=end_month_default - 1, format_func=lambda m: calendar.month_name[m])
+        with col4:
+            end_year = st.selectbox("End Year", years, index=years.index(end_year_default) if end_year_default in years else len(years) - 1)
+        
+        try:
+            start_date = date(start_year, start_month, 1)
+            end_day = calendar.monthrange(end_year, end_month)[1]
+            end_date = date(end_year, end_month, end_day)
+            
+            if start_date > end_date:
+                st.warning("Start must be before end.")
+                st.stop()
+        except Exception as e:
+            st.error(f"Invalid date range: {e}")
+            st.stop()
         
         # Filter by date
         mask = (df['start'].dt.date >= start_date) & (df['start'].dt.date <= end_date)
