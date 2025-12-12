@@ -19,6 +19,7 @@
 - ⚡ Performance optimizations with enhanced caching and loading states
 - 🔄 Smart session management with page-specific loading indicators
 - 💫 Improved user experience with progress spinners and cache management
+- 🔍 Event Search: Find calendar events by name with detailed views and metrics
 
 ## 🖼️ Screenshots
 
@@ -116,6 +117,17 @@ Analyze who you spend the most time with based on calendar event titles.
 - **Exclude Patterns**: Filter out generic events like "team meeting" or "community time"
 - **Hide from Discover**: Hide irrelevant words from the discovery list without excluding events
 - **Persistent Settings**: All configurations saved to `social_analysis_settings.json` (sorted alphabetically)
+
+---
+
+## 🔍 Event Search
+
+Find calendar events by name with detailed views and metrics.
+
+- **Search by Name**: Case-insensitive, partial match search for events
+- **View Matching Events**: See all occurrences with start/end times and duration
+- **Summary Metrics**: Get total matching events, total hours, and average duration
+- **CSV Download**: Download search results as CSV for external analysis
 
 ---
 
