@@ -128,6 +128,7 @@ Find calendar events by name with detailed views and metrics.
 - **View Matching Events**: See all occurrences with start/end times and duration
 - **Summary Metrics**: Get total matching events, total hours, and average duration
 - **CSV Download**: Download search results as CSV for external analysis
+- **Calendar/Category Filter**: Optionally filter search results by calendar or category (based on selected view mode)
 
 ---
 
