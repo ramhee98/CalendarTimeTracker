@@ -12,10 +12,10 @@
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
 - 🎨 Custom calendar colors
 - 🔍 Search page: Find calendar events by name with detailed views and metrics
-- 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
-- 📈 Trends page: visualize calendar activity over time using line and bar charts
-- 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 👥 Social Analysis page: Analyze who you spend the most time with
+- 📈 Trends page: visualize calendar activity over time using line and bar charts
+- 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
+- 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🌍 Time zone normalization support
 - ⚡ Performance optimizations with enhanced caching and loading states
 - 🔄 Smart session management with page-specific loading indicators
@@ -72,7 +72,39 @@ CalendarTimeTracker v1.04 introduces significant performance improvements:
 
 ---
 
-### 📈 Trends Overview
+## � Search Page
+
+Find calendar events by name with detailed views and metrics.
+
+- **Dedicated Search Page**: Access via the sidebar navigation
+- **Date Range Filtering**: Select month range to limit search scope
+- **Search by Name**: Case-insensitive, partial match search for events
+- **View Matching Events**: See all occurrences with start/end times and duration
+- **Summary Metrics**: Get total matching events, total hours, and average duration
+- **CSV Download**: Download search results as CSV for external analysis
+- **Calendar/Category Filter**: Optionally filter search results by calendar or category (based on selected view mode)
+
+---
+
+### 👥 Social Analysis
+
+Analyze who you spend the most time with based on calendar event titles.
+
+- **Track People**: Add names to track and see total hours spent with each person
+- **Aliases/Nicknames**: Add comma-separated aliases (e.g., "Niclas, Nic") to group variations
+- **Discover Names**: Automatically find frequently occurring words in your events
+- **Date Filtering**: Analyze specific time periods with month/year selectors
+- **Event Details**: See all events for each tracked person (sorted A-Z)
+- **Statistics**: View hours, event count, average and median duration per person
+- **Last Seen**: Track when you last met with each person
+- **Ignore Partial Names**: Prevent "john" from matching events with "john doe" when both are tracked
+- **Exclude Patterns**: Filter out generic events like "team meeting" or "community time"
+- **Hide from Discover**: Hide irrelevant words from the discovery list without excluding events
+- **Persistent Settings**: All configurations saved to `social_analysis_settings.json` (sorted alphabetically)
+
+---
+
+### � Trends Overview
 
 Understand how your calendar activity evolves over time.
 
@@ -99,38 +131,6 @@ Get intelligent analysis of your calendar data with AI-powered insights.
 Upload `.ics` files and assign them to specific calendars configured via `calendars.json` or `calendars.txt`.
 
 ![Import ICS File](img/import-ics.png)
-
----
-
-### 👥 Social Analysis
-
-Analyze who you spend the most time with based on calendar event titles.
-
-- **Track People**: Add names to track and see total hours spent with each person
-- **Aliases/Nicknames**: Add comma-separated aliases (e.g., "Niclas, Nic") to group variations
-- **Discover Names**: Automatically find frequently occurring words in your events
-- **Date Filtering**: Analyze specific time periods with month/year selectors
-- **Event Details**: See all events for each tracked person (sorted A-Z)
-- **Statistics**: View hours, event count, average and median duration per person
-- **Last Seen**: Track when you last met with each person
-- **Ignore Partial Names**: Prevent "john" from matching events with "john doe" when both are tracked
-- **Exclude Patterns**: Filter out generic events like "team meeting" or "community time"
-- **Hide from Discover**: Hide irrelevant words from the discovery list without excluding events
-- **Persistent Settings**: All configurations saved to `social_analysis_settings.json` (sorted alphabetically)
-
----
-
-## 🔍 Search Page
-
-Find calendar events by name with detailed views and metrics.
-
-- **Dedicated Search Page**: Access via the sidebar navigation
-- **Date Range Filtering**: Select month range to limit search scope
-- **Search by Name**: Case-insensitive, partial match search for events
-- **View Matching Events**: See all occurrences with start/end times and duration
-- **Summary Metrics**: Get total matching events, total hours, and average duration
-- **CSV Download**: Download search results as CSV for external analysis
-- **Calendar/Category Filter**: Optionally filter search results by calendar or category (based on selected view mode)
 
 ---
 
