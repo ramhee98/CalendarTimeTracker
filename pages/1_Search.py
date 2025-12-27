@@ -1,4 +1,5 @@
 import streamlit as st
+import re
 from utils import load_all_events, normalize_calendar_name, normalize_time, select_month_range
 import pandas as pd
 
@@ -71,7 +72,7 @@ with col1:
     search_query = st.text_input(
         "Search for event name",
         placeholder="Enter event name to search...",
-        help="Search is case-insensitive and matches partial names"
+        help="Search is case-insensitive. Use * as wildcard (e.g., 'Z*rich' matches 'Zürich')"
     )
 with col2:
     selected_options = st.multiselect(
@@ -82,8 +83,13 @@ with col2:
     )
 
 if search_query:
-    # Filter events containing the search query (case-insensitive)
-    mask = df["event_name"].str.contains(search_query, case=False, na=False)
+    # Convert wildcard pattern to regex
+    # Escape special regex characters except *, then convert * to .*
+    pattern = re.escape(search_query).replace(r'\*', '.*')
+    
+    # Filter events matching the pattern (case-insensitive)
+    # Pattern matches anywhere in the event name
+    mask = df["event_name"].str.contains(pattern, case=False, na=False, regex=True)
     matching_events = df[mask].copy()
     
     # Apply filter if any options are selected
