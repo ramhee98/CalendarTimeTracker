@@ -4,7 +4,7 @@ from openai import OpenAI
 import os
 import json
 from datetime import date, datetime
-from app import load_all_events, normalize_calendar_name, normalize_time, select_month_range
+from utils import load_all_events, normalize_calendar_name, normalize_time, select_month_range
 from dotenv import load_dotenv
 from ai_config_manager import load_ai_config, get_system_prompt, get_available_prompt_types, format_prompt_template
 

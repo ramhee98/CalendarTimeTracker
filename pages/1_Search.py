@@ -1,5 +1,5 @@
 import streamlit as st
-from app import load_all_events, normalize_calendar_name, normalize_time, select_month_range
+from utils import load_all_events, normalize_calendar_name, normalize_time, select_month_range
 import pandas as pd
 
 st.set_page_config(page_title="Search Events", layout="wide")

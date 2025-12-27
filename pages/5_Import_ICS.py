@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from ics import Calendar
 from calendar_store import update_event_store
-from app import load_calendar_urls
+from utils import load_calendar_urls
 import requests
 import os
 from datetime import timezone
