@@ -465,10 +465,15 @@ if all_events:
                 st.subheader("📋 Event Details")
                 for person in sorted(time_per_person.keys(), key=lambda x: get_display_name(x).lower()):
                     display_name = get_display_name(person, include_aliases=True)
-                    with st.expander(f"{display_name.title()} - {len(events_per_person[person])} events"):
-                        person_events = events_per_person[person]
+                    person_events = events_per_person[person]
+                    # Count events per calendar
+                    calendar_counts = defaultdict(int)
+                    for evt in person_events:
+                        calendar_counts[evt['calendar']] += 1
+                    calendar_breakdown = ", ".join([f"{cal}: {count}" for cal, count in sorted(calendar_counts.items())])
+                    with st.expander(f"{display_name.title()} - {len(person_events)} events ({calendar_breakdown})"):
                         for evt in sorted(person_events, key=lambda x: x['date'], reverse=True):
-                            st.write(f"• **{evt['title']}** - {evt['date'].strftime('%Y-%m-%d')} ({evt['duration']:.1f}h)")
+                            st.write(f"• **{evt['title']}** - {evt['date'].strftime('%Y-%m-%d')} ({evt['duration']:.1f}h) - *{evt['calendar']}*")
         
         st.divider()
         
