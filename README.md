@@ -11,7 +11,8 @@
 - 📦 Summary tables with CSV export (includes averages per day/week)
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
 - 🎨 Custom calendar colors
-- 🔍 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
+- 🔍 Search page: Find calendar events by name with detailed views and metrics
+- 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📈 Trends page: visualize calendar activity over time using line and bar charts
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 👥 Social Analysis page: Analyze who you spend the most time with
@@ -19,7 +20,6 @@
 - ⚡ Performance optimizations with enhanced caching and loading states
 - 🔄 Smart session management with page-specific loading indicators
 - 💫 Improved user experience with progress spinners and cache management
-- 🔍 Event Search: Find calendar events by name with detailed views and metrics
 
 ## 🖼️ Screenshots
 
@@ -120,10 +120,12 @@ Analyze who you spend the most time with based on calendar event titles.
 
 ---
 
-## 🔍 Event Search
+## 🔍 Search Page
 
 Find calendar events by name with detailed views and metrics.
 
+- **Dedicated Search Page**: Access via the sidebar navigation
+- **Date Range Filtering**: Select month range to limit search scope
 - **Search by Name**: Case-insensitive, partial match search for events
 - **View Matching Events**: See all occurrences with start/end times and duration
 - **Summary Metrics**: Get total matching events, total hours, and average duration

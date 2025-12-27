@@ -545,85 +545,6 @@ def show_calendar_distribution_pie_chart(df, group_mode):
     st.subheader(f"Time Distribution by {group_label}")
     st.altair_chart(chart, use_container_width=True)
 
-def show_event_search(df, start_date, end_date, group_mode):
-    """Search for events by name and display matching results."""
-    st.subheader("🔍 Search Events")
-    
-    # Get unique values for filter based on group_mode
-    filter_column = group_mode  # "calendar" or "category"
-    filter_label = group_mode.title()  # "Calendar" or "Category"
-    available_options = sorted(df[filter_column].unique().tolist())
-    
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        search_query = st.text_input(
-            "Search for event name",
-            placeholder="Enter event name to search...",
-            help="Search is case-insensitive and matches partial names"
-        )
-    with col2:
-        selected_options = st.multiselect(
-            f"Filter by {filter_label.lower()}(s)",
-            options=available_options,
-            default=[],
-            help=f"Leave empty to search all {filter_label.lower()}s"
-        )
-    
-    if search_query:
-        # Filter events containing the search query (case-insensitive)
-        mask = df["event_name"].str.contains(search_query, case=False, na=False)
-        matching_events = df[mask].copy()
-        
-        # Apply filter if any options are selected
-        if selected_options:
-            matching_events = matching_events[matching_events[filter_column].isin(selected_options)]
-        
-        if matching_events.empty:
-            filter_msg = f" in selected {filter_label.lower()}(s)" if selected_options else ""
-            st.info(f"No events found matching '{search_query}'{filter_msg}")
-            return
-        
-        # Sort by start time (most recent first)
-        matching_events = matching_events.sort_values("start", ascending=False)
-        
-        # Calculate total time
-        total_hours = matching_events["duration_hours"].sum()
-        total_events = len(matching_events)
-        
-        # Display summary
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Matching Events", total_events)
-        with col2:
-            st.metric("Total Hours", f"{total_hours:.2f}")
-        with col3:
-            avg_duration = total_hours / total_events if total_events > 0 else 0
-            st.metric("Avg Duration", f"{avg_duration:.2f} hrs")
-        
-        # Prepare display dataframe
-        display_df = matching_events[[
-            "event_name", "calendar", "category", "start", "end", "duration_hours"
-        ]].copy()
-        
-        # Format datetime columns for display
-        display_df["start"] = display_df["start"].dt.strftime("%Y-%m-%d %H:%M")
-        display_df["end"] = display_df["end"].dt.strftime("%Y-%m-%d %H:%M")
-        display_df["duration_hours"] = display_df["duration_hours"].round(2)
-        
-        # Rename columns for display
-        display_df.columns = ["Event Name", "Calendar", "Category", "Start", "End", "Duration (hrs)"]
-        
-        st.dataframe(display_df, use_container_width=True)
-        
-        # Download button for search results
-        csv = display_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "Download Search Results as CSV",
-            csv,
-            f"search_results_{search_query}.csv",
-            "text/csv"
-        )
-
 # Copy sample file if calendars.txt doesn't exist
 if not os.path.exists("calendars.txt") and os.path.exists("calendars.txt.sample"):
     shutil.copy("calendars.txt.sample", "calendars.txt")
@@ -674,9 +595,6 @@ if all_events:
     with st.spinner("Processing and filtering calendar data..."):
         df, start_date, end_date = preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range)
         df["group"] = df[group_mode]
-    
-    # Add event search feature
-    show_event_search(df, start_date, end_date, group_mode)
     
     show_summary_table(df, start_date, end_date)
 
