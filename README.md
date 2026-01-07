@@ -182,7 +182,7 @@ The app will:
 
 1. Load events from `.ics` calendar sources
 2. Ask you to select a view mode (Calendar or Category) if using `calendars.json`
-3. Let you choose a month range to analyze
+3. Let you choose a month range to analyze (defaults to last 12 months)
 4. Display multiple interactive charts and tables
 
 ## 📂 Output

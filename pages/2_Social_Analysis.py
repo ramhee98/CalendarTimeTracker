@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from ics import Calendar
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from collections import defaultdict
 import re
 import json
@@ -380,9 +380,12 @@ if all_events:
         months = list(range(1, 13))
         now = datetime.now()
         
-        start_month_default = 1
+        # Default to last 12 months
+        twelve_months_ago = now - timedelta(days=365)
+        start_month_default = twelve_months_ago.month
+        start_year_default = twelve_months_ago.year
         end_month_default = now.month
-        start_year_default = end_year_default = now.year
+        end_year_default = now.year
         
         st.subheader("Select Month Range")
         

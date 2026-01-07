@@ -207,9 +207,12 @@ def select_month_range(df):
     months = list(range(1, 13))
     now = datetime.now()
 
-    start_month_default = 1
-    end_month_default = datetime.now().month
-    start_year_default = end_year_default = now.year
+    # Default to last 12 months
+    twelve_months_ago = now - timedelta(days=365)
+    start_month_default = twelve_months_ago.month
+    start_year_default = twelve_months_ago.year
+    end_month_default = now.month
+    end_year_default = now.year
 
     st.subheader("Select Month Range")
 
