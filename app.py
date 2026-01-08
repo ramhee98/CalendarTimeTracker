@@ -425,20 +425,45 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
     # Create a color mapping based on the selected group
     color_mapping = df.groupby('group')['color'].first().to_dict()
 
-    # Create a function to calculate the proportion of an event that falls within a specific time period
-    def calculate_time_proportion(row, period_start, period_end):
-        event_start = max(row['start'], period_start)
-        event_end = min(row['end'], period_end)
-
-        # If the event doesn't overlap with this period, return 0
-        if event_end <= event_start:
-            return 0
-
-        # Calculate the proportion of the event that falls in this period
-        event_duration = (row['end'] - row['start']).total_seconds() / 3600
-        period_duration = (event_end - event_start).total_seconds() / 3600
-
-        return period_duration
+    # Vectorized time proportion calculation
+    def calculate_time_proportions_vectorized(df, periods_df, period_start_col, period_end_col, label_col):
+        """Calculate time proportions using vectorized operations instead of nested loops."""
+        results = []
+        tz = df['start'].dt.tz
+        
+        for _, period in periods_df.iterrows():
+            period_start = pd.Timestamp(period[period_start_col])
+            period_end = pd.Timestamp(period[period_end_col])
+            
+            # Make timezone aware if needed
+            if tz is not None:
+                if period_start.tz is None:
+                    period_start = period_start.tz_localize(tz)
+                if period_end.tz is None:
+                    period_end = period_end.tz_localize(tz)
+            
+            # Set end of period to end of day
+            period_end = period_end.replace(hour=23, minute=59, second=59)
+            
+            # Vectorized overlap calculation
+            event_starts = df['start'].clip(lower=period_start)
+            event_ends = df['end'].clip(upper=period_end)
+            
+            # Calculate durations (only positive overlaps)
+            durations = (event_ends - event_starts).dt.total_seconds() / 3600
+            durations = durations.clip(lower=0)
+            
+            # Filter events with positive duration and aggregate
+            mask = durations > 0
+            if mask.any():
+                period_df = df.loc[mask, ['group']].copy()
+                period_df['duration_hours'] = durations[mask]
+                period_df['time_label'] = period[label_col]
+                results.append(period_df)
+        
+        if results:
+            return pd.concat(results, ignore_index=True)
+        return pd.DataFrame()
 
     # Create time-based data frames based on the selected date_option
     time_aggregation = pd.DataFrame()
@@ -447,73 +472,42 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
         # Generate all weeks in the selected range
         weeks = []
         current_date = start_date
+        seen_weeks = set()
         while current_date <= end_date:
             year, week, _ = current_date.isocalendar()
-            weeks.append({'year': year, 'week': week, 
-                         'week_start': datetime.fromisocalendar(year, week, 1),
-                         'week_end': datetime.fromisocalendar(year, week, 7)})
+            week_key = (year, week)
+            if week_key not in seen_weeks:
+                seen_weeks.add(week_key)
+                weeks.append({
+                    'year': year, 
+                    'week': week, 
+                    'week_start': datetime.fromisocalendar(year, week, 1),
+                    'week_end': datetime.fromisocalendar(year, week, 7),
+                    'time_label': f"{year}-W{week:02d}"
+                })
             current_date += timedelta(days=7)
 
         weeks_df = pd.DataFrame(weeks)
-
-        # Calculate duration for each event in each week
-        results = []
-        tz = df['start'].dt.tz
-        for _, week_row in weeks_df.iterrows():
-            # Ensure period_start and period_end are tz-aware
-            period_start = pd.Timestamp(week_row['week_start']).tz_localize(tz)
-            period_end = pd.Timestamp(week_row['week_end']).replace(hour=23, minute=59, second=59).tz_localize(tz)
-
-            for _, event_row in df.iterrows():
-                duration = calculate_time_proportion(event_row, period_start, period_end)
-                if duration > 0:
-                    results.append({
-                        'year': week_row['year'],
-                        'week': week_row['week'],
-                        'group': event_row['group'],
-                        'duration_hours': duration,
-                        'time_label': f"{week_row['year']}-W{week_row['week']:02d}"
-                    })
-
-        if results:
-            time_aggregation = pd.DataFrame(results)
-            time_aggregation = time_aggregation.groupby(['time_label', 'group']).agg(
-                duration_hours=('duration_hours', 'sum'),
-                year=('year', 'first'),
-                week=('week', 'first')
-            ).reset_index()
+        time_aggregation = calculate_time_proportions_vectorized(
+            df, weeks_df, 'week_start', 'week_end', 'time_label'
+        )
 
     elif date_option == "day":
         # Generate all days in the selected range
         days = []
         current_date = start_date
         while current_date <= end_date:
-            days.append(current_date)
+            days.append({
+                'day_start': datetime.combine(current_date, datetime.min.time()),
+                'day_end': datetime.combine(current_date, datetime.min.time()),
+                'time_label': current_date.strftime('%Y-%m-%d')
+            })
             current_date += timedelta(days=1)
 
-        # Calculate duration for each event in each day
-        results = []
-        tz = df["start"].dt.tz
-        for day in days:
-            period_start = pd.Timestamp(day).tz_localize(tz)
-            period_end = pd.Timestamp(day).replace(hour=23, minute=59, second=59).tz_localize(tz)
-
-            for _, event_row in df.iterrows():
-                duration = calculate_time_proportion(event_row, period_start, period_end)
-                if duration > 0:
-                    results.append({
-                        'date': day,
-                        'group': event_row['group'],
-                        'duration_hours': duration,
-                        'time_label': day.strftime('%Y-%m-%d')
-                    })
-
-        if results:
-            time_aggregation = pd.DataFrame(results)
-            time_aggregation = time_aggregation.groupby(['time_label', 'group']).agg(
-                duration_hours=('duration_hours', 'sum'),
-                date=('date', 'first')
-            ).reset_index()
+        days_df = pd.DataFrame(days)
+        time_aggregation = calculate_time_proportions_vectorized(
+            df, days_df, 'day_start', 'day_end', 'time_label'
+        )
 
     else:  # Month
         # Generate all months in the selected range
@@ -522,9 +516,11 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
         while current_date <= end_date:
             month_end = date(current_date.year, current_date.month, 
                             calendar.monthrange(current_date.year, current_date.month)[1])
-            months.append({'month': pd.Period(current_date, freq='M'),
-                          'month_start': current_date,
-                          'month_end': month_end})
+            months.append({
+                'month_start': current_date,
+                'month_end': month_end,
+                'time_label': f"{current_date.year}-{current_date.month:02d}"
+            })
             # Move to next month
             if current_date.month == 12:
                 current_date = date(current_date.year + 1, 1, 1)
@@ -532,33 +528,18 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
                 current_date = date(current_date.year, current_date.month + 1, 1)
 
         months_df = pd.DataFrame(months)
-        # Calculate duration for each event in each month
-        results = []
-        tz = df["start"].dt.tz
-        for _, month_row in months_df.iterrows():
-            period_start = pd.Timestamp(month_row['month_start']).tz_localize(tz)
-            period_end = pd.Timestamp(month_row['month_end']).replace(hour=23, minute=59, second=59).tz_localize(tz)
-
-            for _, event_row in df.iterrows():
-                duration = calculate_time_proportion(event_row, period_start, period_end)
-                if duration > 0:
-                    results.append({
-                        'month': month_row['month'],
-                        'group': event_row['group'],
-                        'duration_hours': duration,
-                        'time_label': str(month_row['month'])
-                    })
-
-        if results:
-            time_aggregation = pd.DataFrame(results)
-            time_aggregation = time_aggregation.groupby(['time_label', 'group']).agg(
-                duration_hours=('duration_hours', 'sum'),
-                month=('month', 'first')
-            ).reset_index()
+        time_aggregation = calculate_time_proportions_vectorized(
+            df, months_df, 'month_start', 'month_end', 'time_label'
+        )
 
     if time_aggregation.empty:
         st.info(f"No data to display for the selected time range.")
         return
+
+    # Aggregate by time_label and group
+    time_aggregation = time_aggregation.groupby(['time_label', 'group']).agg(
+        duration_hours=('duration_hours', 'sum')
+    ).reset_index()
 
     # Calculate percentages
     time_totals = time_aggregation.groupby('time_label')["duration_hours"].transform("sum")
