@@ -283,18 +283,33 @@ def _background_cache_refresh():
         except Exception as e:
             print(f"[CalendarTimeTracker] Auto-refresh failed: {e}")
 
-def _start_background_refresher():
-    """Start the background refresh thread (only once)."""
-    global _refresher_started
-    with _refresh_lock:
-        if not _refresher_started:
-            thread = threading.Thread(target=_background_cache_refresh, daemon=True)
-            thread.start()
-            _refresher_started = True
-            print(f"[CalendarTimeTracker] Background refresher started (interval: {_REFRESH_INTERVAL/3600:.1f}h)")
+_refresher_lock = threading.Lock()
+_refresher_stop = None
+
+def _start_thread(stop_event: threading.Event):
+    def worker():
+        while not stop_event.is_set():
+            refresh()
+            stop_event.wait(3600)
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+
+@st.cache_resource
+def start_background_refresher_once():
+    global _refresher_stop
+
+    with _refresher_lock:
+        # If a previous refresher exists in this process, stop it (covers code reload edge cases)
+        if _refresher_stop is not None and not _refresher_stop.is_set():
+            _refresher_stop.set()
+
+        stop_event = threading.Event()
+        _refresher_stop = stop_event
+        _start_thread(stop_event)
+        return stop_event
 
 # Start background refresher on module load
-_start_background_refresher()
+start_background_refresher_once()
 
 def select_month_range(df):
     min_date = df["start"].min().date()
