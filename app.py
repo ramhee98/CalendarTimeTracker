@@ -651,10 +651,29 @@ with st.sidebar:
     latest_version = get_latest_github_version()
     
     st.markdown(f"**Current Version:** {version}")
-    st.markdown(f"**Latest Version (cached):** {latest_version}")
+    st.markdown(f"**Latest Version:** {latest_version}")
     
-    if version != "Unknown" and latest_version != "Unknown" and version < latest_version:
+    update_available = version != "Unknown" and latest_version != "Unknown" and version < latest_version
+    
+    if update_available:
         st.info("🔄 A newer version is available!")
+        if st.button("⬇️ Update Now", help="Pull latest version from GitHub"):
+            import subprocess
+            result = subprocess.run(["git", "pull"], capture_output=True, text=True)
+            if result.returncode == 0:
+                st.success("✅ Updated! Please restart the app.")
+                st.code(result.stdout)
+            else:
+                st.error(f"Update failed: {result.stderr}")
+    else:
+        if st.button("🔄 Check for Updates", help="Check GitHub for new releases"):
+            get_latest_github_version.clear()
+            # Fetch immediately after clearing
+            new_version = get_latest_github_version()
+            if version != "Unknown" and new_version != "Unknown" and version < new_version:
+                st.info(f"🔄 Update available: v{new_version}")
+            else:
+                st.success("✅ You're on the latest version!")
     
     st.markdown("🔗 [GitHub Repository](https://github.com/ramhee98/CalendarTimeTracker)")
 

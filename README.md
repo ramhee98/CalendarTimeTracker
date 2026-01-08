@@ -199,6 +199,7 @@ The app will:
 - Duplicate events are filtered using the event `UID` field.
 - **Cache-first loading**: Pages load instantly from local CSV cache in `data/`.
 - **Background auto-refresh**: Calendars sync automatically 5 minutes before the 24-hour cache expires.
+- **In-app updates**: Check for updates and pull latest version directly from the sidebar.
 - Multi-day events are properly handled with proportional time distribution.
 - Events from the **past 30 days and all future dates** are automatically re-synced with the source `.ics` file.
   - If an event is **removed** from the source calendar, it will also be **removed from the local cache**.
