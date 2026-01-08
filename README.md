@@ -75,7 +75,7 @@ CalendarTimeTracker v2.0 introduces major performance improvements:
 
 ---
 
-## � Search Page
+## 🔍 Search Events
 
 Find calendar events by name with detailed views and metrics.
 
@@ -89,7 +89,7 @@ Find calendar events by name with detailed views and metrics.
 
 ---
 
-### 👥 Social Analysis
+### 👥 Social Time Analysis
 
 Analyze who you spend the most time with based on calendar event titles.
 
@@ -107,7 +107,7 @@ Analyze who you spend the most time with based on calendar event titles.
 
 ---
 
-### � Trends Overview
+### 📈 Calendar Trends Overview
 
 Understand how your calendar activity evolves over time.
 
@@ -118,7 +118,7 @@ Understand how your calendar activity evolves over time.
 
 ---
 
-### 🧠 AI Insights (ChatGPT-Powered)
+### 🧠 Calendar AI Insights (ChatGPT-Powered)
 
 Get intelligent analysis of your calendar data with AI-powered insights.
 
@@ -130,7 +130,8 @@ Get intelligent analysis of your calendar data with AI-powered insights.
 
 ---
 
-### 📥 Importing `.ics` into a Calendar
+### � Import ICS File
+
 Upload `.ics` files and assign them to specific calendars configured via `calendars.json` or `calendars.txt`.
 
 ![Import ICS File](img/import-ics.png)
