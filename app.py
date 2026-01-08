@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import tzlocal
 
 # Streamlit UI
-st.set_page_config(page_title="CalendarTimeTracker", layout="wide", initial_sidebar_state='collapsed')
+st.set_page_config(page_title="CalendarTimeTracker", layout="wide")
 st.title("CalendarTimeTracker")
 st.caption("Analyze time usage from multiple public calendar (.ics) URLs")
 
