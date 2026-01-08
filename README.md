@@ -22,33 +22,19 @@
 - 💾 **Dual loading controls**: Quick Load (cache) and Sync Calendars (URLs) on every page
 - 💫 Improved user experience with progress spinners and cache management
 
-## 🖼️ Screenshots
+## 🏠 Home Dashboard
 
-### 📋 Summary Table
-Aggregate total hours, averages, and event counts per calendar or category.
+![Home Overview](img/home/home-overview.png)
 
-![Summary Table](img/summary.png)
+![Sidebar](img/home/home-sidebar.png)
 
----
+![Summary Table](img/home/home-summary-table.png)
 
-### 📆 Total Time per Month (Stacked)
-View absolute duration stacked per calendar each month.
+![Time per Week](img/home/home-time-per-week.png)
 
-![Total Time per Month](img/total-time-per-month-stacked.png)
+![Time Distribution](img/home/home-time-distribution-per-calendar.png)
 
----
-
-### 📊 Relative Time per Month (100% Stacked)
-Visualize how time is distributed each month, normalized to 100%.
-
-![Relative Time per Month](img/relative-time-per-month.png)
-
----
-
-### 🥧 Time Distribution by Calendar
-See which calendar contributes most to your time allocation.
-
-![Time Distribution Pie Chart](img/time-distribution-per-calendar.png)
+![Activity Heatmap](img/home/home-activity-heatmap.png)
 
 ---
 
@@ -79,6 +65,8 @@ CalendarTimeTracker v2.0 introduces major performance improvements:
 
 Find calendar events by name with detailed views and metrics.
 
+![Search Overview](img/search/search-overview.png)
+
 - **Dedicated Search Page**: Access via the sidebar navigation
 - **Date Range Filtering**: Select month range to limit search scope
 - **Search by Name**: Case-insensitive, partial match search for events
@@ -92,6 +80,8 @@ Find calendar events by name with detailed views and metrics.
 ### 👥 Social Time Analysis
 
 Analyze who you spend the most time with based on calendar event titles.
+
+![Social Overview](img/social/social-overview.png)
 
 - **Track People**: Add names to track and see total hours spent with each person
 - **Aliases/Nicknames**: Add comma-separated aliases (e.g., "Niclas, Nic") to group variations
@@ -111,16 +101,18 @@ Analyze who you spend the most time with based on calendar event titles.
 
 Understand how your calendar activity evolves over time.
 
+![Trends Overview](img/trends/trends-overview.png)
+
 - Switch between daily, weekly, and monthly granularity
 - Useful for spotting workload peaks and recurring patterns
-
-![Trend Line Chart](img/trends-line-chart.png)
 
 ---
 
 ### 🧠 Calendar AI Insights (ChatGPT-Powered)
 
 Get intelligent analysis of your calendar data with AI-powered insights.
+
+![AI Insights Overview](img/ai-insights/ai-insights-overview.png)
 
 - **Time Grouping**: Analyze patterns by day, week, or month
 - **Temporal Analysis**: Identify trends and patterns over time periods
@@ -130,11 +122,11 @@ Get intelligent analysis of your calendar data with AI-powered insights.
 
 ---
 
-### � Import ICS File
+### 📂 Import ICS File
 
 Upload `.ics` files and assign them to specific calendars configured via `calendars.json` or `calendars.txt`.
 
-![Import ICS File](img/import-ics.png)
+![Import Overview](img/import/import-overview.png)
 
 ---
 
