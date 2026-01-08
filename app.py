@@ -108,7 +108,7 @@ def _fetch_and_parse_ics(url, calendar_name):
         print(f"Error loading {url}: {e}")
         return []
 
-@st.cache_data(ttl=86400, show_spinner="Loading calendar data...")  # Cache for 24 hours
+@st.cache_data(ttl=86400, show_spinner=False)  # Cache for 24 hours, spinner handled manually
 def parse_ics_from_url(url, calendar_name):
     """Streamlit-cached wrapper for fetching and parsing ICS."""
     return _fetch_and_parse_ics(url, calendar_name)

@@ -50,7 +50,7 @@ def random_distinct_color(index, total_colors):
     return color
 
 
-@st.cache_data(ttl=3600, show_spinner="Loading calendar data...")
+@st.cache_data(ttl=3600, show_spinner=False)  # Spinner handled manually by callers
 def parse_ics_from_url(url, calendar_name):
     try:
         # Fetch .ics content
