@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-from utils import load_all_events, normalize_calendar_name, normalize_time, select_month_range
+from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range
 import pandas as pd
 
 st.set_page_config(page_title="Search Events", layout="wide")
@@ -12,19 +12,35 @@ if "search_loaded" not in st.session_state:
     st.session_state.search_loaded = False
 
 # --- Cache management ---
-col1, col2 = st.columns([3, 1])
+col1, col2, col3 = st.columns([2, 1, 1])
 with col2:
-    if st.button("🔄 Refresh Data", help="Clear cache and reload data"):
+    if st.button("⚡ Quick Load", help="Load instantly from local cache"):
+        st.session_state.search_loaded = False
+        st.session_state.force_refresh_search = False
+        st.rerun()
+with col3:
+    if st.button("🔄 Sync Calendars", help="Fetch latest data from calendar URLs"):
         st.cache_data.clear()
         st.session_state.search_loaded = False
+        st.session_state.force_refresh_search = True
         st.rerun()
 
-# --- Load events ---
-with st.spinner("Loading calendar data..."):
-    all_events, source_type = load_all_events()
-    if not all_events:
-        st.warning("No events available.")
-        st.stop()
+# --- Load events - from cache (instant) or URLs (on refresh) ---
+force_refresh = st.session_state.get("force_refresh_search", False)
+if force_refresh:
+    st.session_state.force_refresh_search = False
+    with st.spinner("Fetching latest calendar data from URLs..."):
+        all_events, source_type = load_all_events()
+else:
+    with st.spinner("Loading calendar data from cache..."):
+        all_events, source_type = load_all_events_from_cache()
+        if not all_events:
+            with st.spinner("No cache found, fetching from URLs..."):
+                all_events, source_type = load_all_events()
+
+if not all_events:
+    st.warning("No events available.")
+    st.stop()
 
 # Mark as loaded
 st.session_state.search_loaded = True

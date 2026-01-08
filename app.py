@@ -5,13 +5,15 @@ from datetime import datetime, date, timedelta, timezone
 import altair as alt
 import os
 import shutil
-from calendar_store import update_event_store
+from calendar_store import update_event_store, load_cached_events
 from ics import Calendar
 import calendar
 import json
 import colorsys
 from urllib.parse import urlparse
 import tzlocal
+import threading
+import time
 
 # Streamlit UI
 st.set_page_config(page_title="CalendarTimeTracker", layout="wide")
@@ -52,8 +54,8 @@ def random_distinct_color(index, total_colors):
     color = "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
     return color
 
-@st.cache_data(ttl=3600, show_spinner="Loading calendar data...")  # Cache for 1 hour
-def parse_ics_from_url(url, calendar_name):
+def _fetch_and_parse_ics(url, calendar_name):
+    """Core function to fetch and parse ICS - no Streamlit dependencies."""
     try:
         # Fetch .ics content
         parsed_url = urlparse(url)
@@ -103,8 +105,13 @@ def parse_ics_from_url(url, calendar_name):
         return combined_df.to_dict("records")
 
     except Exception as e:
-        st.error(f"Error loading {url}: {e}")
+        print(f"Error loading {url}: {e}")
         return []
+
+@st.cache_data(ttl=86400, show_spinner="Loading calendar data...")  # Cache for 24 hours
+def parse_ics_from_url(url, calendar_name):
+    """Streamlit-cached wrapper for fetching and parsing ICS."""
+    return _fetch_and_parse_ics(url, calendar_name)
 
 def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars.txt"):
     try:
@@ -180,6 +187,33 @@ def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars
         st.error(f"An error occurred while loading calendar config {filetype}: {e}")
         return None, None
 
+def load_all_events_from_cache():
+    """Load events from local CSV cache only (instant, no network requests)."""
+    try:
+        calendar_data, source_type = load_calendar_urls()
+        if not calendar_data:
+            return None, None
+
+        all_events = []
+        for calendar_info in calendar_data:
+            url = calendar_info["url"]
+            custom_name = calendar_info["custom_name"]
+            category = calendar_info["category"]
+            color = calendar_info["color"]
+            
+            # Load from local CSV cache (no URL fetching)
+            cached_df = load_cached_events(url)
+            if not cached_df.empty:
+                cached_df["category"] = category
+                cached_df["calendar_name"] = custom_name
+                cached_df["color"] = color
+                all_events.extend(cached_df.to_dict("records"))
+
+        return all_events if all_events else None, source_type
+    except Exception as e:
+        st.error(f"An error occurred while loading cached events: {e}")
+        return None, None
+
 def load_all_events():
     try:
         calendar_data, source_type = load_calendar_urls()
@@ -203,6 +237,64 @@ def load_all_events():
     except Exception as e:
         st.error(f"An error occurred while loading events: {e}")
         return None, None
+
+# --- Background auto-refresh (runs 5 minutes before 24-hour TTL expires) ---
+_CACHE_TTL = 86400  # 24 hours in seconds
+_REFRESH_INTERVAL = _CACHE_TTL - (5 * 60)  # Refresh 5 minutes before expiry
+_refresh_lock = threading.Lock()
+_refresher_started = False
+
+def _load_calendar_urls_no_streamlit(calendars_json_file="calendars.json", txt_file="calendars.txt"):
+    """Load calendar URLs without Streamlit dependencies (for background thread)."""
+    try:
+        if os.path.exists(calendars_json_file):
+            with open(calendars_json_file, 'r') as file:
+                calendar_data = json.load(file)
+            return [(c["url"], c.get("custom_name", "") or "Unnamed") for c in calendar_data['calendars']]
+        elif os.path.exists(txt_file):
+            calendars = []
+            with open(txt_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        parts = line.split("#")
+                        url = parts[0].strip()
+                        custom_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Unnamed"
+                        calendars.append((url, custom_name))
+            return calendars
+        return []
+    except Exception as e:
+        print(f"[CalendarTimeTracker] Error loading calendar config: {e}")
+        return []
+
+def _background_cache_refresh():
+    """Background thread that refreshes calendar cache before TTL expires."""
+    while True:
+        time.sleep(_REFRESH_INTERVAL)
+        try:
+            print(f"[CalendarTimeTracker] Auto-refresh started at {datetime.now()}")
+            # Fetch calendars and update local CSV cache (bypasses Streamlit cache)
+            calendars = _load_calendar_urls_no_streamlit()
+            for url, custom_name in calendars:
+                _fetch_and_parse_ics(url, custom_name)  # Updates local CSV cache
+            # Clear Streamlit cache so next user request gets fresh data
+            parse_ics_from_url.clear()
+            print(f"[CalendarTimeTracker] Auto-refresh completed at {datetime.now()}")
+        except Exception as e:
+            print(f"[CalendarTimeTracker] Auto-refresh failed: {e}")
+
+def _start_background_refresher():
+    """Start the background refresh thread (only once)."""
+    global _refresher_started
+    with _refresh_lock:
+        if not _refresher_started:
+            thread = threading.Thread(target=_background_cache_refresh, daemon=True)
+            thread.start()
+            _refresher_started = True
+            print(f"[CalendarTimeTracker] Background refresher started (interval: {_REFRESH_INTERVAL/3600:.1f}h)")
+
+# Start background refresher on module load
+_start_background_refresher()
 
 def select_month_range(df):
     min_date = df["start"].min().date()
@@ -567,16 +659,32 @@ with st.sidebar:
     st.markdown("🔗 [GitHub Repository](https://github.com/ramhee98/CalendarTimeTracker)")
 
 # --- Cache management ---
-col1, col2 = st.columns([3, 1])
+col1, col2, col3 = st.columns([2, 1, 1])
 with col2:
-    if st.button("🔄 Refresh Data", help="Clear cache and reload calendar data"):
+    if st.button("⚡ Quick Load", help="Load instantly from local cache"):
+        st.session_state.main_app_loaded = False
+        st.session_state.force_refresh = False
+        st.rerun()
+with col3:
+    if st.button("🔄 Sync Calendars", help="Fetch latest data from calendar URLs"):
         st.cache_data.clear()
         st.session_state.main_app_loaded = False
+        st.session_state.force_refresh = True
         st.rerun()
 
-# Load events from all calendar URLs
-with st.spinner("Loading and processing calendar events..."):
-    all_events, source_type = load_all_events()
+# Load events - from cache (instant) or URLs (on refresh)
+force_refresh = st.session_state.get("force_refresh", False)
+if force_refresh:
+    st.session_state.force_refresh = False  # Reset flag
+    with st.spinner("Fetching latest calendar data from URLs..."):
+        all_events, source_type = load_all_events()
+else:
+    with st.spinner("Loading calendar data from cache..."):
+        all_events, source_type = load_all_events_from_cache()
+        if not all_events:
+            # No cache exists yet, fetch from URLs
+            with st.spinner("No cache found, fetching from URLs..."):
+                all_events, source_type = load_all_events()
 
 # Mark main app as loaded
 st.session_state.main_app_loaded = True

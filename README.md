@@ -17,8 +17,9 @@
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🌍 Time zone normalization support
-- ⚡ Performance optimizations with enhanced caching and loading states
-- 🔄 Smart session management with page-specific loading indicators
+- ⚡ **Cache-first loading** with instant page loads from local cache
+- 🔄 **Background auto-refresh** syncs calendars every 24 hours automatically
+- 💾 **Dual loading controls**: Quick Load (cache) and Sync Calendars (URLs) on every page
 - 💫 Improved user experience with progress spinners and cache management
 
 ## 🖼️ Screenshots
@@ -53,17 +54,18 @@ See which calendar contributes most to your time allocation.
 
 ## ⚡ Performance Enhancements
 
-CalendarTimeTracker v1.04 introduces significant performance improvements:
+CalendarTimeTracker v2.0 introduces major performance improvements:
 
-### 🚀 Smart Caching & Loading
-- **Enhanced Cache Management**: Improved caching with informative loading spinners
-- **Session State Optimization**: Page-specific loading states prevent unnecessary reprocessing
-- **User-Friendly Progress Indicators**: Clear feedback during data loading, processing, and chart generation
+### 🚀 Smart Caching Architecture
+- **Cache-First Loading**: Pages load instantly from local CSV cache
+- **Background Auto-Refresh**: Calendars sync automatically every 24 hours
+- **24-Hour TTL**: Data stays fresh with automatic cache invalidation
+- **Shared Cache**: All pages benefit from synced calendar data
 
-### 🔄 Improved User Experience
-- **Prominent Refresh Button**: Easy one-click cache clearing and data reload
-- **Loading State Management**: Prevents UI blocking during heavy operations
-- **Consistent Performance Patterns**: All pages follow optimized loading strategies
+### 🔄 New Loading Controls
+- **⚡ Quick Load**: Load instantly from local cache
+- **🔄 Sync Calendars**: Fetch latest data from calendar URLs
+- **Consistent UI**: Same button layout across all pages
 
 ### 📊 Optimized Data Processing
 - **Progressive Loading**: Data is loaded and processed in stages with visual feedback
@@ -195,7 +197,8 @@ The app will:
 
 - Time zone normalization supports local, UTC, and naive modes.
 - Duplicate events are filtered using the event `UID` field.
-- Intelligent caching reduces repeated loads for unchanged calendars.
+- **Cache-first loading**: Pages load instantly from local CSV cache in `data/`.
+- **Background auto-refresh**: Calendars sync automatically 5 minutes before the 24-hour cache expires.
 - Multi-day events are properly handled with proportional time distribution.
 - Events from the **past 30 days and all future dates** are automatically re-synced with the source `.ics` file.
   - If an event is **removed** from the source calendar, it will also be **removed from the local cache**.

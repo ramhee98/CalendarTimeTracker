@@ -4,7 +4,7 @@ from openai import OpenAI
 import os
 import json
 from datetime import date, datetime
-from utils import load_all_events, normalize_calendar_name, normalize_time, select_month_range
+from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range
 from dotenv import load_dotenv
 from ai_config_manager import load_ai_config, get_system_prompt, get_available_prompt_types, format_prompt_template
 
@@ -81,28 +81,42 @@ else:
         st.stop()
 
 # --- Cache management ---
-col1, col2, col3 = st.columns([2, 1, 1])
+col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 with col2:
-    if st.button("🔄 Refresh Data", help="Clear cache and reload calendar data"):
-        st.cache_data.clear()
-        st.session_state.ai_insights_loaded = False
-        # Clear AI response cache when refreshing data
-        st.session_state.ai_responses = {}
-        clear_ai_responses_cache()
-        st.session_state.current_analysis_key = None
-        st.rerun()
-
-with col3:
     if st.button("🗑️ Clear AI Cache", help="Clear only AI response cache"):
         st.session_state.ai_responses = {}
         clear_ai_responses_cache()
         st.session_state.current_analysis_key = None
         st.success("AI response cache cleared!")
         st.rerun()
+with col3:
+    if st.button("⚡ Quick Load", help="Load instantly from local cache"):
+        st.session_state.ai_insights_loaded = False
+        st.session_state.force_refresh_ai = False
+        st.rerun()
+with col4:
+    if st.button("🔄 Sync Calendars", help="Fetch latest data from calendar URLs"):
+        st.cache_data.clear()
+        st.session_state.ai_insights_loaded = False
+        # Clear AI response cache when refreshing data
+        st.session_state.ai_responses = {}
+        clear_ai_responses_cache()
+        st.session_state.current_analysis_key = None
+        st.session_state.force_refresh_ai = True
+        st.rerun()
 
-# --- Load calendar data ---
-with st.spinner("Loading calendar data..."):
-    all_events, source_type = load_all_events()
+# --- Load calendar data - from cache (instant) or URLs (on refresh) ---
+force_refresh = st.session_state.get("force_refresh_ai", False)
+if force_refresh:
+    st.session_state.force_refresh_ai = False
+    with st.spinner("Fetching latest calendar data from URLs..."):
+        all_events, source_type = load_all_events()
+else:
+    with st.spinner("Loading calendar data from cache..."):
+        all_events, source_type = load_all_events_from_cache()
+        if not all_events:
+            with st.spinner("No cache found, fetching from URLs..."):
+                all_events, source_type = load_all_events()
 
 if not all_events:
     st.warning("No events available to analyze.")

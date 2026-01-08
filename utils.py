@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import tzlocal
 from ics import Calendar
 import calendar as cal_module
-from calendar_store import update_event_store
+from calendar_store import update_event_store, load_cached_events
 
 
 def get_version():
@@ -196,6 +196,34 @@ def load_all_events():
         return all_events, source_type
     except Exception as e:
         st.error(f"An error occurred while loading events: {e}")
+        return None, None
+
+
+def load_all_events_from_cache():
+    """Load events from local CSV cache only (instant, no network requests)."""
+    try:
+        calendar_data, source_type = load_calendar_urls()
+        if not calendar_data:
+            return None, None
+
+        all_events = []
+        for calendar_info in calendar_data:
+            url = calendar_info["url"]
+            custom_name = calendar_info["custom_name"]
+            category = calendar_info["category"]
+            color = calendar_info["color"]
+            
+            # Load from local CSV cache (no URL fetching)
+            cached_df = load_cached_events(url)
+            if not cached_df.empty:
+                cached_df["category"] = category
+                cached_df["calendar_name"] = custom_name
+                cached_df["color"] = color
+                all_events.extend(cached_df.to_dict("records"))
+
+        return all_events if all_events else None, source_type
+    except Exception as e:
+        st.error(f"An error occurred while loading cached events: {e}")
         return None, None
 
 

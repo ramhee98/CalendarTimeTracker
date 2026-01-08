@@ -8,6 +8,7 @@ import json
 import os
 import requests
 import calendar
+from calendar_store import load_cached_events, update_event_store
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
 st.title("👥 Social Time Analysis")
@@ -65,8 +66,27 @@ def load_calendar_urls(calendars_json_file="calendars.json"):
         return calendar_data.get('calendars', [])
     return []
 
+def load_events_from_cache(url, calendar_name):
+    """Load events from local CSV cache (instant, no network)."""
+    cached_df = load_cached_events(url)
+    if cached_df.empty:
+        return []
+    
+    events = []
+    for _, row in cached_df.iterrows():
+        # Handle column name - CSV uses 'event_name', Social Analysis uses 'title'
+        title = row.get("event_name", row.get("title", "")) if hasattr(row, 'get') else (row["event_name"] if "event_name" in row.index else "")
+        events.append({
+            "calendar": calendar_name,
+            "title": title if pd.notna(title) else "",
+            "start": row["start"],
+            "end": row["end"],
+            "duration_hours": row["duration_hours"],
+        })
+    return events
+
 def fetch_calendar_events(url, calendar_name):
-    """Fetch and parse events from a calendar URL."""
+    """Fetch and parse events from a calendar URL and update CSV cache."""
     try:
         if url.startswith("file://"):
             path = url.replace("file://", "")
@@ -80,22 +100,40 @@ def fetch_calendar_events(url, calendar_name):
         
         cal = Calendar(content)
         events = []
+        events_for_cache = []  # For updating CSV cache
         
         for event in cal.events:
             try:
                 start = event.begin.datetime.astimezone(timezone.utc)
                 end = event.end.datetime.astimezone(timezone.utc)
                 duration = (end - start).total_seconds() / 3600
+                uid = getattr(event, 'uid', None)
+                event_name = event.name or ""
                 
                 events.append({
                     "calendar": calendar_name,
-                    "title": event.name or "",
+                    "title": event_name,
                     "start": start,
                     "end": end,
                     "duration_hours": duration,
                 })
+                
+                # Also prepare for CSV cache update
+                events_for_cache.append({
+                    "calendar": calendar_name,
+                    "event_name": event_name,
+                    "start": start,
+                    "end": end,
+                    "duration_hours": duration,
+                    "uid": uid,
+                })
             except Exception:
                 continue
+        
+        # Update the shared CSV cache so other pages benefit
+        if events_for_cache:
+            new_df = pd.DataFrame(events_for_cache)
+            update_event_store(url, new_df)
         
         return events
     except Exception as e:
@@ -186,6 +224,8 @@ def get_display_name(person_entry, include_aliases=False):
 
 def should_exclude(title, exclude_patterns):
     """Check if an event should be excluded."""
+    if not isinstance(title, str):
+        return False  # Can't match patterns on non-string titles
     title_lower = title.lower()
     for pattern in exclude_patterns:
         pattern_lower = pattern.lower().strip()
@@ -202,6 +242,8 @@ def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_
     
     for _, row in df.iterrows():
         title = row['title']
+        if not isinstance(title, str):
+            title = str(title) if pd.notna(title) else ""
         duration = row['duration_hours']
         
         # Skip excluded events
@@ -338,17 +380,45 @@ else:
         st.session_state.settings["selected_calendars"] = selected_calendar_names
         save_settings(st.session_state.settings)
     
-    if selected_calendar_names and st.button("🔄 Load Selected Calendars"):
-        with st.spinner("Fetching calendar data..."):
+    # Auto-load from cache on page load if calendars selected and no events loaded
+    if selected_calendar_names and not st.session_state.loaded_events:
+        loaded_events = []
+        for name in selected_calendar_names:
+            cal_config = calendar_options[name]
+            events = load_events_from_cache(cal_config["url"], name)
+            loaded_events.extend(events)
+        if loaded_events:
+            st.session_state.loaded_events = loaded_events
+    
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col2:
+        if selected_calendar_names and st.button("⚡ Quick Load selected", help="Load selected calendars instantly from local cache"):
             loaded_events = []
             for name in selected_calendar_names:
                 cal_config = calendar_options[name]
-                events = fetch_calendar_events(cal_config["url"], name)
+                events = load_events_from_cache(cal_config["url"], name)
                 loaded_events.extend(events)
             
             if loaded_events:
                 st.session_state.loaded_events = loaded_events
-                st.success(f"Loaded {len(loaded_events)} events from {len(selected_calendar_names)} calendar(s)")
+                st.success(f"Loaded {len(loaded_events)} events from cache")
+            else:
+                st.warning("No cached data found. Click 'Sync Calendars' to fetch data.")
+    
+    with col3:
+        if selected_calendar_names and st.button("🔄 Sync selected Calendars", help="Fetch latest data from selected calendar URLs"):
+            with st.spinner("Fetching calendar data from URLs..."):
+                loaded_events = []
+                for name in selected_calendar_names:
+                    cal_config = calendar_options[name]
+                    events = fetch_calendar_events(cal_config["url"], name)
+                    loaded_events.extend(events)
+                
+                if loaded_events:
+                    st.session_state.loaded_events = loaded_events
+                    # Clear Streamlit cache so other pages see fresh data
+                    st.cache_data.clear()
+                    st.success(f"Synced {len(loaded_events)} events from {len(selected_calendar_names)} calendar(s)")
 
 # Use events from session state
 all_events = st.session_state.loaded_events
