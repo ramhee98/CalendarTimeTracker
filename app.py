@@ -289,7 +289,7 @@ _refresher_stop = None
 def _start_thread(stop_event: threading.Event):
     def worker():
         while not stop_event.is_set():
-            refresh()
+            _background_cache_refresh()
             stop_event.wait(3600)
     t = threading.Thread(target=worker, daemon=True)
     t.start()
