@@ -231,38 +231,36 @@ def select_month_range(df):
     min_date = df["start"].min().date()
     max_date = df["start"].max().date()
 
-    years = list(range(min_date.year, max_date.year + 1))
-    months = list(range(1, 13))
-    now = datetime.now()
-
-    # Default to last 12 months
+    now = datetime.now().date()
+    # Default to last 12 months (as a reasonable default range)
     twelve_months_ago = now - timedelta(days=365)
-    start_month_default = twelve_months_ago.month
-    start_year_default = twelve_months_ago.year
-    end_month_default = now.month
-    end_year_default = now.year
+    default_start = max(min_date, twelve_months_ago)
+    default_end = min(max_date, now)
 
-    st.subheader("Select Month Range")
+    st.subheader("Select Date Range")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
     with col1:
-        start_month = st.selectbox("Start Month", months, index=start_month_default - 1, format_func=lambda m: cal_module.month_name[m])
+        start_date = st.date_input(
+            "Start Date",
+            value=default_start,
+            min_value=min_date,
+            max_value=max_date,
+            help="Select the start date for filtering events (day & month enabled)",
+        )
     with col2:
-        start_year = st.selectbox("Start Year", years, index=years.index(start_year_default))
-    with col3:
-        end_month = st.selectbox("End Month", months, index=end_month_default - 1, format_func=lambda m: cal_module.month_name[m])
-    with col4:
-        end_year = st.selectbox("End Year", years, index=years.index(end_year_default))
+        end_date = st.date_input(
+            "End Date",
+            value=default_end,
+            min_value=min_date,
+            max_value=max_date,
+            help="Select the end date for filtering events (day & month enabled)",
+        )
 
     try:
-        start_date = date(start_year, start_month, 1)
-        end_day = cal_module.monthrange(end_year, end_month)[1]
-        end_date = date(end_year, end_month, end_day)
-
         if start_date > end_date:
             st.warning("Start must be before end.")
             st.stop()
-
         return start_date, end_date
 
     except Exception as e:
