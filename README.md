@@ -13,6 +13,7 @@
 - 🎨 Custom calendar colors
 - 🔍 Search page: Find calendar events by name with detailed views and metrics
 - 👥 Social Analysis page: Analyze who you spend the most time with
+- Compare Periods page: side-by-side comparison of two date ranges with delta metrics
 - 📈 Trends page: visualize calendar activity over time using line and bar charts
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
@@ -94,6 +95,20 @@ Analyze who you spend the most time with based on calendar event titles.
 - **Exclude Patterns**: Filter out generic events like "team meeting" or "community time"
 - **Hide from Discover**: Hide irrelevant words from the discovery list without excluding events
 - **Persistent Settings**: All configurations saved to `social_analysis_settings.json` (sorted alphabetically)
+
+---
+
+### Compare Periods
+
+Compare your time spending between two date ranges side by side.
+
+![Compare Periods Overview](img/compare/compare-overview.png)
+
+- **Quick Presets**: "This week vs last week", "This month vs last month", "This month vs same month last year", or custom ranges
+- **Summary Metrics**: Total hours, total events, and average hours/day with deltas
+- **Side-by-Side Bar Chart**: Grouped comparison by calendar or category
+- **Detailed Comparison Table**: Absolute and percentage changes per calendar/category
+- **Daily Breakdown**: Line chart of daily hours within each period
 
 ---
 
