@@ -87,10 +87,12 @@ if uploaded_file and target_url:
                 end = event.end.datetime.astimezone(timezone.utc)
                 duration = (end - start).total_seconds() / 3600
                 uid = event.uid
+                name = event.name or "Untitled Event"
                 # Extract name only (before first parenthesis)
                 calendar_name = selected_label.split(" (")[0]
                 events.append({
                     "calendar": f"[Imported] {calendar_name}",
+                    "event_name": name,
                     "start": start,
                     "end": end,
                     "duration_hours": duration,
