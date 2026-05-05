@@ -409,12 +409,22 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
             period_start = pd.Timestamp(period[period_start_col])
             period_end = pd.Timestamp(period[period_end_col])
             
-            # Make timezone aware if needed
+            # Make timezone aware if needed. Use shift_forward / NaT to survive
+            # DST transitions where midnight may be ambiguous or non-existent
+            # (events near these boundaries were silently dropped before).
             if tz is not None:
                 if period_start.tz is None:
-                    period_start = period_start.tz_localize(tz)
+                    period_start = period_start.tz_localize(
+                        tz, nonexistent='shift_forward', ambiguous='NaT'
+                    )
                 if period_end.tz is None:
-                    period_end = period_end.tz_localize(tz)
+                    period_end = period_end.tz_localize(
+                        tz, nonexistent='shift_forward', ambiguous='NaT'
+                    )
+                # If localization produced NaT (ambiguous DST midnight), skip
+                # this period rather than crashing on the comparison below.
+                if pd.isna(period_start) or pd.isna(period_end):
+                    continue
             
             # Set end of period to end of day
             period_end = period_end.replace(hour=23, minute=59, second=59)
