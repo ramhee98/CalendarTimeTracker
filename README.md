@@ -213,7 +213,7 @@ The app will:
 - Events from the **past 30 days and all future dates** are automatically re-synced with the source `.ics` file.
   - If an event is **removed** from the source calendar, it will also be **removed from the local cache**.
   - Events **older than 30 days** are preserved for historical reference, even if they no longer exist in the source.
-- Version checking automatically notifies you of updates from GitHub.
+- Version checking automatically notifies you of updates from GitHub. The current version is stored in `version.txt`.
 - Summary tables include per-day and per-week averages for better insights.
 
 ## 🙌 Contribution
