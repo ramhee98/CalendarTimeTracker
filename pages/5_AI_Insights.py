@@ -65,20 +65,32 @@ max_prompt_length = ai_config.get("ui_settings", {}).get("max_prompt_length", 20
 
 # --- OpenAI API setup ---
 env_path = ".env"
+PLACEHOLDER_KEY = "your-api-key-here"
 # Create .env file with placeholder if it doesn't exist
 if not os.path.exists(env_path):
     with open(env_path, "w") as f:
-        f.write("OPENAI_API_KEY=your-api-key-here\n")
-    print("✅ Created .env file with placeholder API key.")
-    st.error("Missing OpenAI API key. Set it in the .env file.")
+        f.write(f"OPENAI_API_KEY={PLACEHOLDER_KEY}\n")
+    st.error(
+        "No `.env` file was found, so a template has been created in the project root. "
+        f"Open it and replace `{PLACEHOLDER_KEY}` with a real OpenAI API key, "
+        "then refresh this page."
+    )
     st.stop()
-else:
-    load_dotenv()
-    if os.getenv("OPENAI_API_KEY") != "your-api-key-here":
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    else:
-        st.warning("⚠️ OpenAI API key not found. The Analyze page will not work.")
-        st.stop()
+
+load_dotenv()
+api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+if not api_key:
+    st.error(
+        "`OPENAI_API_KEY` is empty. Set it in your `.env` file (project root) and refresh."
+    )
+    st.stop()
+if api_key == PLACEHOLDER_KEY:
+    st.error(
+        f"Your `.env` still contains the placeholder value `{PLACEHOLDER_KEY}`. "
+        "Replace it with a real OpenAI API key and refresh this page."
+    )
+    st.stop()
+client = OpenAI(api_key=api_key)
 
 # --- Cache management ---
 col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
