@@ -268,30 +268,29 @@ def _load_calendar_urls_no_streamlit(calendars_json_file="calendars.json", txt_f
         print(f"[CalendarTimeTracker] Error loading calendar config: {e}")
         return []
 
-def _background_cache_refresh():
-    """Background thread that refreshes calendar cache before TTL expires."""
-    while True:
-        time.sleep(_REFRESH_INTERVAL)
-        try:
-            print(f"[CalendarTimeTracker] Auto-refresh started at {datetime.now()}")
-            # Fetch calendars and update local CSV cache (bypasses Streamlit cache)
-            calendars = _load_calendar_urls_no_streamlit()
-            for url, custom_name in calendars:
-                _fetch_and_parse_ics(url, custom_name)  # Updates local CSV cache
-            # Clear Streamlit cache so next user request gets fresh data
-            parse_ics_from_url.clear()
-            print(f"[CalendarTimeTracker] Auto-refresh completed at {datetime.now()}")
-        except Exception as e:
-            print(f"[CalendarTimeTracker] Auto-refresh failed: {e}")
+def _refresh_calendar_cache_once():
+    """Run a single cache-refresh pass."""
+    try:
+        print(f"[CalendarTimeTracker] Auto-refresh started at {datetime.now()}")
+        # Fetch calendars and update local CSV cache (bypasses Streamlit cache)
+        calendars = _load_calendar_urls_no_streamlit()
+        for url, custom_name in calendars:
+            _fetch_and_parse_ics(url, custom_name)  # Updates local CSV cache
+        # Clear Streamlit cache so next user request gets fresh data
+        parse_ics_from_url.clear()
+        print(f"[CalendarTimeTracker] Auto-refresh completed at {datetime.now()}")
+    except Exception as e:
+        print(f"[CalendarTimeTracker] Auto-refresh failed: {e}")
 
 _refresher_lock = threading.Lock()
 _refresher_stop = None
 
 def _start_thread(stop_event: threading.Event):
     def worker():
-        while not stop_event.is_set():
-            _background_cache_refresh()
-            stop_event.wait(3600)
+        # Single loop that uses the stop_event for sleeping so the thread
+        # exits promptly when the event is set (e.g. on Streamlit reload).
+        while not stop_event.wait(_REFRESH_INTERVAL):
+            _refresh_calendar_cache_once()
     t = threading.Thread(target=worker, daemon=True)
     t.start()
 
