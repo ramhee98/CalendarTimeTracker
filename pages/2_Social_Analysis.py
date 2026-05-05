@@ -19,7 +19,7 @@ st.caption("Analyze who you spend the most time with")
 SETTINGS_FILE = "social_analysis_settings.json"
 
 def load_settings():
-    """Load settings from JSON file."""
+    """Load settings from JSON file, validating types and filling missing keys."""
     default_settings = {
         "known_people": [],
         "exclude_patterns": [],
@@ -27,18 +27,35 @@ def load_settings():
         "selected_calendars": [],
         "ignore_partial_names": True
     }
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, 'r') as f:
-                settings = json.load(f)
-                # Merge with defaults for any missing keys
-                for key in default_settings:
-                    if key not in settings:
-                        settings[key] = default_settings[key]
-                return settings
-        except Exception as e:
-            st.error(f"Error loading settings: {e}")
-    return default_settings
+    if not os.path.exists(SETTINGS_FILE):
+        return default_settings
+    try:
+        with open(SETTINGS_FILE, 'r') as f:
+            loaded = json.load(f)
+    except Exception as e:
+        st.error(f"Error loading settings: {e}")
+        return default_settings
+
+    if not isinstance(loaded, dict):
+        st.warning("Settings file did not contain an object; falling back to defaults.")
+        return default_settings
+
+    merged = dict(default_settings)
+    for key, default_value in default_settings.items():
+        if key not in loaded:
+            continue
+        value = loaded[key]
+        # Drop values whose type does not match the default; this prevents a
+        # corrupted entry (e.g. a string where a list is expected) from
+        # propagating into downstream code.
+        if not isinstance(value, type(default_value)):
+            st.warning(
+                f"Settings key '{key}' has unexpected type "
+                f"{type(value).__name__}; using default."
+            )
+            continue
+        merged[key] = value
+    return merged
 
 def save_settings(settings):
     """Save settings to JSON file."""
