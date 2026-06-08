@@ -253,6 +253,13 @@ def should_exclude(title, exclude_patterns):
             return True
     return False
 
+def format_gap(hours_val):
+    """Format a time gap (given in hours) showing hours with days in parentheses, e.g. '55h (2.3 days)'."""
+    if hours_val is None:
+        return None
+    days_val = hours_val / 24
+    return f"{round(hours_val)}h ({round(days_val, 1)} days)"
+
 def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_names=False):
     """Analyze time spent with each person."""
     time_per_person = defaultdict(float)
@@ -501,25 +508,21 @@ if all_events:
                     # Calculate median duration
                     durations = [evt['duration'] for evt in person_events]
                     median_duration = sorted(durations)[len(durations) // 2] if durations else 0
-                    # Calculate cadence: days between consecutive distinct meeting days
-                    meeting_days = sorted({evt['date'].date() for evt in person_events})
-                    gaps = [(meeting_days[i + 1] - meeting_days[i]).days
-                            for i in range(len(meeting_days) - 1)]
-                    if gaps:
-                        gaps_series = pd.Series(gaps)
-                        avg_days_between = round(gaps_series.mean(), 1)
-                        min_days_between = int(gaps_series.min())
-                        q1_days_between = round(gaps_series.quantile(0.25), 1)
-                        median_days_between = round(gaps_series.quantile(0.5), 1)
-                        q3_days_between = round(gaps_series.quantile(0.75), 1)
-                        max_days_between = int(gaps_series.max())
+                    # Calculate cadence: time between consecutive events (in hours)
+                    event_times = sorted({evt['date'] for evt in person_events})
+                    gaps_hours = [(event_times[i + 1] - event_times[i]).total_seconds() / 3600
+                                  for i in range(len(event_times) - 1)]
+                    if gaps_hours:
+                        gaps_series = pd.Series(gaps_hours)
+                        avg_between = gaps_series.mean()
+                        min_between = gaps_series.min()
+                        q1_between = gaps_series.quantile(0.25)
+                        median_between = gaps_series.quantile(0.5)
+                        q3_between = gaps_series.quantile(0.75)
+                        max_between = gaps_series.max()
                     else:
-                        avg_days_between = None
-                        min_days_between = None
-                        q1_days_between = None
-                        median_days_between = None
-                        q3_days_between = None
-                        max_days_between = None
+                        avg_between = min_between = q1_between = None
+                        median_between = q3_between = max_between = None
                     display_name = get_display_name(person, include_aliases=True)
                     results.append({
                         "Person": display_name.title(),
@@ -527,12 +530,12 @@ if all_events:
                         "Events": event_count,
                         "Avg Hours/Event": round(hours / event_count, 1) if event_count > 0 else 0,
                         "Median Hours/Event": round(median_duration, 1),
-                        "Avg Days Between": avg_days_between,
-                        "Min Days Between": min_days_between,
-                        "Q1 Days Between": q1_days_between,
-                        "Median Days Between": median_days_between,
-                        "Q3 Days Between": q3_days_between,
-                        "Max Days Between": max_days_between,
+                        "Avg Between": format_gap(avg_between),
+                        "Min Between": format_gap(min_between),
+                        "Q1 Between": format_gap(q1_between),
+                        "Median Between": format_gap(median_between),
+                        "Q3 Between": format_gap(q3_between),
+                        "Max Between": format_gap(max_between),
                         "Last Seen": last_seen
                     })
                 

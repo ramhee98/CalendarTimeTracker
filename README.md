@@ -90,7 +90,7 @@ Analyze who you spend the most time with based on calendar event titles.
 - **Date Filtering**: Analyze specific time periods with month/year selectors
 - **Event Details**: See all events for each tracked person (sorted A-Z)
 - **Statistics**: View hours, event count, average and median duration per person
-- **Meeting Cadence**: See the days between meeting each person as a five-number summary (avg, min, Q1, median, Q3, max)
+- **Meeting Cadence**: See the time between consecutive events with each person as a five-number summary (avg, min, Q1, median, Q3, max), shown in hours with days in parentheses
 - **Last Seen**: Track when you last met with each person
 - **Ignore Partial Names**: Prevent "john" from matching events with "john doe" when both are tracked
 - **Exclude Patterns**: Filter out generic events like "team meeting" or "community time"
