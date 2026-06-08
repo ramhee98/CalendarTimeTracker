@@ -501,6 +501,25 @@ if all_events:
                     # Calculate median duration
                     durations = [evt['duration'] for evt in person_events]
                     median_duration = sorted(durations)[len(durations) // 2] if durations else 0
+                    # Calculate cadence: days between consecutive distinct meeting days
+                    meeting_days = sorted({evt['date'].date() for evt in person_events})
+                    gaps = [(meeting_days[i + 1] - meeting_days[i]).days
+                            for i in range(len(meeting_days) - 1)]
+                    if gaps:
+                        gaps_series = pd.Series(gaps)
+                        avg_days_between = round(gaps_series.mean(), 1)
+                        min_days_between = int(gaps_series.min())
+                        q1_days_between = round(gaps_series.quantile(0.25), 1)
+                        median_days_between = round(gaps_series.quantile(0.5), 1)
+                        q3_days_between = round(gaps_series.quantile(0.75), 1)
+                        max_days_between = int(gaps_series.max())
+                    else:
+                        avg_days_between = None
+                        min_days_between = None
+                        q1_days_between = None
+                        median_days_between = None
+                        q3_days_between = None
+                        max_days_between = None
                     display_name = get_display_name(person, include_aliases=True)
                     results.append({
                         "Person": display_name.title(),
@@ -508,6 +527,12 @@ if all_events:
                         "Events": event_count,
                         "Avg Hours/Event": round(hours / event_count, 1) if event_count > 0 else 0,
                         "Median Hours/Event": round(median_duration, 1),
+                        "Avg Days Between": avg_days_between,
+                        "Min Days Between": min_days_between,
+                        "Q1 Days Between": q1_days_between,
+                        "Median Days Between": median_days_between,
+                        "Q3 Days Between": q3_days_between,
+                        "Max Days Between": max_days_between,
                         "Last Seen": last_seen
                     })
                 
