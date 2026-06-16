@@ -9,7 +9,7 @@ import os
 import requests
 import calendar
 from calendar_store import load_cached_events, update_event_store, expand_event_occurrences
-from utils import select_month_range
+from utils import select_month_range, normalize_time
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
 st.title("👥 Social Time Analysis")
@@ -450,7 +450,10 @@ all_events = st.session_state.loaded_events
 # --- Analysis Section ---
 if all_events:
     df = pd.DataFrame(all_events)
-    
+    # Convert UTC timestamps to local time so date filtering, "Last Seen" and
+    # cadence match the other pages (which all normalize to local time).
+    df = normalize_time(df, tz="local")
+
     # Check for "Busy" events
     unique_titles = df['title'].unique()
     busy_only = len(unique_titles) == 1 and unique_titles[0].lower() == 'busy'
