@@ -23,6 +23,13 @@ def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now
     """
     start_utc = event.begin.datetime.astimezone(timezone.utc)
     end_utc = event.end.datetime.astimezone(timezone.utc)
+    if getattr(event, "all_day", False):
+        # All-day events arrive at UTC midnight. Converting midnight to a
+        # local timezone west of UTC rolls the event onto the previous
+        # calendar day. Anchor at noon UTC instead so the date is stable
+        # under any realistic timezone offset.
+        start_utc = start_utc.replace(hour=12, minute=0, second=0, microsecond=0)
+        end_utc = end_utc.replace(hour=12, minute=0, second=0, microsecond=0)
     duration = end_utc - start_utc
     uid = event.uid
 
