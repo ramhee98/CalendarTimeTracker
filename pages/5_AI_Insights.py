@@ -268,7 +268,11 @@ model = st.selectbox(
 def create_analysis_key(start_date, end_date, group_mode, time_group, selected_prompt_type, system_prompt, model, verbosity):
     """Create a unique key for caching analysis results"""
     import hashlib
-    key_string = f"{start_date}_{end_date}_{group_mode}_{time_group}_{selected_prompt_type}_{hash(system_prompt)}_{model}_{verbosity}"
+    # Use a stable digest of the prompt. Python's built-in hash() is salted
+    # per process (PYTHONHASHSEED), so it produced a different key every restart
+    # and the persisted on-disk cache never matched.
+    prompt_digest = hashlib.md5(system_prompt.encode()).hexdigest()
+    key_string = f"{start_date}_{end_date}_{group_mode}_{time_group}_{selected_prompt_type}_{prompt_digest}_{model}_{verbosity}"
     return hashlib.md5(key_string.encode()).hexdigest()
 
 analysis_key = create_analysis_key(start_date, end_date, group_mode, time_group, selected_prompt_type, system_prompt, model, verbosity)
