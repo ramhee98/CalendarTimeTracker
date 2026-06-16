@@ -157,8 +157,10 @@ if df_a.empty and df_b.empty:
 # --- Summary metrics ---
 st.subheader("Summary")
 
-days_a = max((a_end - a_start).days, 1)
-days_b = max((b_end - b_start).days, 1)
+# Inclusive day count: filter_period includes both endpoints, so a
+# Mon..Sun range spans 7 days, not (end - start).days == 6.
+days_a = max((a_end - a_start).days + 1, 1)
+days_b = max((b_end - b_start).days + 1, 1)
 
 total_a = df_a["duration_hours"].sum()
 total_b = df_b["duration_hours"].sum()
