@@ -359,9 +359,30 @@ def show_summary_table(df, start_date, end_date):
         days_span = (end_date - start_date).days + 1
         weeks_span = days_span / 7
 
-        # Group and aggregate
+        # Clip each event's duration to the selected range so events that
+        # straddle the boundary (or span multiple days) only contribute the
+        # in-range portion. This keeps the table consistent with the duration
+        # charts, which already clip to the period.
+        tz = df["start"].dt.tz
+        period_start = pd.Timestamp(start_date)
+        period_end = pd.Timestamp(end_date)
+        if tz is not None:
+            period_start = period_start.tz_localize(tz, nonexistent="shift_forward", ambiguous="NaT")
+            period_end = period_end.tz_localize(tz, nonexistent="shift_forward", ambiguous="NaT")
+
+        clipped = df.copy()
+        if pd.notna(period_start) and pd.notna(period_end):
+            period_end = period_end.replace(hour=23, minute=59, second=59)
+            clipped_start = clipped["start"].clip(lower=period_start)
+            clipped_end = clipped["end"].clip(upper=period_end)
+            clipped["_in_range_hours"] = ((clipped_end - clipped_start).dt.total_seconds() / 3600).clip(lower=0)
+        else:
+            # DST edge produced an undefined boundary; fall back to full duration.
+            clipped["_in_range_hours"] = clipped["duration_hours"]
+
+        # Group and aggregate on the in-range (clipped) duration
         summary = (
-            df.groupby("group")["duration_hours"]
+            clipped.groupby("group")["_in_range_hours"]
             .agg(Total_Hours="sum", Average_Hours_Per_Event="mean", Event_Count="count")
             .reset_index()
         )
