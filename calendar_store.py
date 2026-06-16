@@ -85,16 +85,33 @@ def save_events_to_cache(url, df):
     path = get_cache_file_path(url)
     df.to_csv(path, index=False)
 
-def update_event_store(url, new_events_df, cutoff_days=30):
+def update_event_store(url, new_events_df, cutoff_days=30, additive=False):
+    """Merge new events into the cached event store for ``url``.
+
+    Two modes:
+
+    * Feed refresh (``additive=False``, default): the URL is authoritative for
+      the recent window, so cached events newer than ``cutoff_days`` are dropped
+      and replaced by whatever the feed currently contains. Events not present
+      in the feed anymore are removed from the recent window.
+    * Additive merge (``additive=True``, used by the manual ICS import): keep
+      ALL existing cached events, replacing only those whose uid also appears in
+      the new set. This never deletes the recent window, so importing a partial
+      .ics file adds to the calendar instead of wiping unrelated events.
+    """
     cached_df = load_cached_events(url)
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(cutoff_days)
 
     if "uid" in new_events_df.columns:
-        # Only keep old events that are outside the replacement range
         if not cached_df.empty and "uid" in cached_df.columns:
-            old_df = cached_df[cached_df["start"] < cutoff]
-            # Replace recent and future events by dropping any matching UIDs
+            if additive:
+                # Keep everything; only matching UIDs get replaced below.
+                old_df = cached_df
+            else:
+                # Only keep old events that are outside the replacement range
+                old_df = cached_df[cached_df["start"] < cutoff]
+            # Replace events by dropping any matching UIDs
             uids_to_keep = set(new_events_df["uid"])
             old_df = old_df[~old_df["uid"].isin(uids_to_keep)]
         else:
