@@ -2,6 +2,7 @@ import streamlit as st
 from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time
 import pandas as pd
 import altair as alt
+import calendar
 from datetime import date, timedelta
 
 st.set_page_config(page_title="Compare Periods", layout="wide")
@@ -74,9 +75,12 @@ presets = {
     },
     "This month vs same month last year": {
         "a_start": today.replace(day=1, year=today.year - 1),
-        "a_end": (today.replace(day=1, year=today.year - 1, month=today.month % 12 + 1)
-                  if today.month < 12
-                  else today.replace(day=31, year=today.year - 1, month=12)),
+        # Last day of this month last year (was incorrectly the 1st of the
+        # following month, spilling an extra day into the next month).
+        "a_end": today.replace(
+            day=calendar.monthrange(today.year - 1, today.month)[1],
+            year=today.year - 1,
+        ),
         "b_start": today.replace(day=1),
         "b_end": today,
     },
