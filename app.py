@@ -453,7 +453,10 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
     if date_option == "week":
         # Generate all weeks in the selected range
         weeks = []
-        current_date = start_date
+        # Snap to the Monday of the start week so the +7 day stride lands on
+        # every ISO week up to and including the week containing end_date.
+        # (Striding from an arbitrary weekday could skip the trailing week.)
+        current_date = start_date - timedelta(days=start_date.weekday())
         seen_weeks = set()
         while current_date <= end_date:
             year, week, _ = current_date.isocalendar()
