@@ -47,6 +47,27 @@ def get_latest_github_version():
         print(f"Error fetching GitHub version: {e}")
         return "Unknown"
 
+def _version_tuple(v):
+    """Parse a dotted version string into a tuple of ints for comparison."""
+    parts = []
+    for p in v.split("."):
+        digits = "".join(ch for ch in p if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+def is_update_available(current, latest):
+    """True if `latest` is a strictly newer version than `current`.
+
+    Uses numeric component comparison so e.g. 2.10 is correctly newer than
+    2.9 (a plain string compare would treat "2.9" > "2.10").
+    """
+    if current == "Unknown" or latest == "Unknown":
+        return False
+    try:
+        return _version_tuple(current) < _version_tuple(latest)
+    except Exception:
+        return False
+
 def random_distinct_color(index, total_colors):
     hue = (index / total_colors)  # Distribute hues evenly (0 to 1)
     saturation = 0.7  # Maintain vivid colors
@@ -640,7 +661,7 @@ with st.sidebar:
     st.markdown(f"**Current Version:** {version}")
     st.markdown(f"**Latest Version:** {latest_version}")
     
-    update_available = version != "Unknown" and latest_version != "Unknown" and version < latest_version
+    update_available = is_update_available(version, latest_version)
     
     if update_available:
         st.info("🔄 A newer version is available!")
@@ -657,7 +678,7 @@ with st.sidebar:
             get_latest_github_version.clear()
             # Fetch immediately after clearing
             new_version = get_latest_github_version()
-            if version != "Unknown" and new_version != "Unknown" and version < new_version:
+            if is_update_available(version, new_version):
                 st.info(f"🔄 Update available: v{new_version}")
             else:
                 st.success("✅ You're on the latest version!")
