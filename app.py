@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta, timezone
 import altair as alt
 import os
 import shutil
-from calendar_store import update_event_store, load_cached_events
+from calendar_store import update_event_store, load_cached_events, expand_event_occurrences
 from ics import Calendar
 import calendar
 import json
@@ -83,20 +83,18 @@ def _fetch_and_parse_ics(url, calendar_name):
         events = []
         for event in cal.events:
             try:
-                start = event.begin.datetime.astimezone(timezone.utc)
-                end = event.end.datetime.astimezone(timezone.utc)
-                duration = (end - start).total_seconds() / 3600
-                uid = event.uid
                 name = event.name or "Untitled Event"  # Add event name
-
-                events.append({
-                    "calendar": calendar_name,
-                    "event_name": name,  # Add event name
-                    "start": start,
-                    "end": end,
-                    "duration_hours": duration,
-                    "uid": uid
-                })
+                # Expand recurring events into individual occurrences.
+                for start, end, occ_uid in expand_event_occurrences(event):
+                    duration = (end - start).total_seconds() / 3600
+                    events.append({
+                        "calendar": calendar_name,
+                        "event_name": name,  # Add event name
+                        "start": start,
+                        "end": end,
+                        "duration_hours": duration,
+                        "uid": occ_uid
+                    })
             except Exception as e:
                 print(f"Skipping event: {e}")
                 continue

@@ -8,7 +8,7 @@ import json
 import os
 import requests
 import calendar
-from calendar_store import load_cached_events, update_event_store
+from calendar_store import load_cached_events, update_event_store, expand_event_occurrences
 from utils import select_month_range
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
@@ -122,29 +122,28 @@ def fetch_calendar_events(url, calendar_name):
         
         for event in cal.events:
             try:
-                start = event.begin.datetime.astimezone(timezone.utc)
-                end = event.end.datetime.astimezone(timezone.utc)
-                duration = (end - start).total_seconds() / 3600
-                uid = getattr(event, 'uid', None)
                 event_name = event.name or ""
-                
-                events.append({
-                    "calendar": calendar_name,
-                    "title": event_name,
-                    "start": start,
-                    "end": end,
-                    "duration_hours": duration,
-                })
-                
-                # Also prepare for CSV cache update
-                events_for_cache.append({
-                    "calendar": calendar_name,
-                    "event_name": event_name,
-                    "start": start,
-                    "end": end,
-                    "duration_hours": duration,
-                    "uid": uid,
-                })
+                # Expand recurring events into individual occurrences.
+                for start, end, occ_uid in expand_event_occurrences(event):
+                    duration = (end - start).total_seconds() / 3600
+
+                    events.append({
+                        "calendar": calendar_name,
+                        "title": event_name,
+                        "start": start,
+                        "end": end,
+                        "duration_hours": duration,
+                    })
+
+                    # Also prepare for CSV cache update
+                    events_for_cache.append({
+                        "calendar": calendar_name,
+                        "event_name": event_name,
+                        "start": start,
+                        "end": end,
+                        "duration_hours": duration,
+                        "uid": occ_uid,
+                    })
             except Exception:
                 continue
         

@@ -2,9 +2,67 @@ import os
 import hashlib
 import pandas as pd
 from datetime import datetime, timedelta, timezone
+from dateutil.rrule import rrulestr
+from dateutil import parser as dtparser
 
 # Ensure event store directory exists
 os.makedirs("data", exist_ok=True)
+
+
+def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now=None):
+    """Expand a single ics Event into its individual occurrences.
+
+    The ``ics`` 0.7.2 library does not expand recurrence rules, so a weekly
+    meeting would otherwise be counted only once. This reads the raw RRULE
+    (and best-effort EXDATE) from ``event.extra`` and materialises each
+    occurrence using dateutil. Non-recurring events yield a single occurrence.
+
+    Returns a list of ``(start_utc, end_utc, uid)`` tuples. Recurring
+    occurrences get a date-suffixed uid so each occurrence is a stable,
+    distinct row in the CSV cache.
+    """
+    start_utc = event.begin.datetime.astimezone(timezone.utc)
+    end_utc = event.end.datetime.astimezone(timezone.utc)
+    duration = end_utc - start_utc
+    uid = event.uid
+
+    rrule_line = next(
+        (c.value for c in getattr(event, "extra", []) if c.name == "RRULE"), None
+    )
+    if not rrule_line:
+        return [(start_utc, end_utc, uid)]
+
+    # Collect EXDATE exclusions (matched by calendar date, best effort).
+    exdates = set()
+    for c in getattr(event, "extra", []):
+        if c.name == "EXDATE":
+            for part in c.value.split(","):
+                try:
+                    exdates.add(dtparser.parse(part).date())
+                except Exception:
+                    pass
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+    horizon = now + timedelta(days=horizon_days)
+
+    try:
+        rule = rrulestr(rrule_line, dtstart=start_utc)
+    except Exception:
+        # Malformed rule: fall back to a single occurrence rather than crashing.
+        return [(start_utc, end_utc, uid)]
+
+    occurrences = []
+    for occ_start in rule:
+        if occ_start > horizon or len(occurrences) >= max_occurrences:
+            break
+        if occ_start.date() in exdates:
+            continue
+        occ_uid = f"{uid}-{occ_start.date().isoformat()}" if uid else None
+        occurrences.append((occ_start, occ_start + duration, occ_uid))
+
+    # If the rule produced nothing in range, keep the master occurrence.
+    return occurrences or [(start_utc, end_utc, uid)]
 
 def hash_url(url):
     return hashlib.md5(url.encode()).hexdigest()

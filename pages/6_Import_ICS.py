@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from ics import Calendar
-from calendar_store import update_event_store
+from calendar_store import update_event_store, expand_event_occurrences
 from utils import load_calendar_urls
 import requests
 import os
@@ -81,23 +81,22 @@ if uploaded_file and target_url:
         cal = Calendar(content)
 
         events = []
+        # Extract name only (before first parenthesis)
+        calendar_name = selected_label.split(" (")[0]
         for event in cal.events:
             try:
-                start = event.begin.datetime.astimezone(timezone.utc)
-                end = event.end.datetime.astimezone(timezone.utc)
-                duration = (end - start).total_seconds() / 3600
-                uid = event.uid
                 name = event.name or "Untitled Event"
-                # Extract name only (before first parenthesis)
-                calendar_name = selected_label.split(" (")[0]
-                events.append({
-                    "calendar": f"[Imported] {calendar_name}",
-                    "event_name": name,
-                    "start": start,
-                    "end": end,
-                    "duration_hours": duration,
-                    "uid": uid
-                })
+                # Expand recurring events into individual occurrences.
+                for start, end, occ_uid in expand_event_occurrences(event):
+                    duration = (end - start).total_seconds() / 3600
+                    events.append({
+                        "calendar": f"[Imported] {calendar_name}",
+                        "event_name": name,
+                        "start": start,
+                        "end": end,
+                        "duration_hours": duration,
+                        "uid": occ_uid
+                    })
             except Exception as e:
                 st.error(f"Skipping event due to error: {e}")
 
