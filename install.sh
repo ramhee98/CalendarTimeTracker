@@ -1,17 +1,72 @@
-# Clone the repository
-git clone https://github.com/ramhee98/CalendarTimeTracker
+#!/usr/bin/env bash
+# CalendarTimeTracker installer
+# Usage: bash install.sh          (installs, then starts the app)
+#        CTT_NO_RUN=1 bash install.sh  (installs only)
+set -euo pipefail
 
-# Navigate into the project directory
-cd CalendarTimeTracker
+REPO_URL="https://github.com/ramhee98/CalendarTimeTracker"
+PROJECT_DIR="CalendarTimeTracker"
 
-# Create a virtual environment
-python3 -m venv .venv
+# 1. Figure out where to install.
+#    Running the script from inside an existing clone must not create a nested one.
+if [ -f "app.py" ] && [ -f "requirements.txt" ]; then
+    echo "==> Existing checkout detected, installing in place: $(pwd)"
+elif [ -d "$PROJECT_DIR/.git" ]; then
+    echo "==> Existing clone found in ./$PROJECT_DIR, updating"
+    cd "$PROJECT_DIR"
+    git pull --ff-only
+else
+    echo "==> Cloning $REPO_URL"
+    git clone "$REPO_URL" "$PROJECT_DIR"
+    cd "$PROJECT_DIR"
+fi
 
-# Activate the virtual environment
+# 2. Check the interpreter.
+PY="${PYTHON:-python3}"
+if ! command -v "$PY" >/dev/null 2>&1; then
+    echo "ERROR: $PY not found. Install python3 and python3-venv." >&2
+    exit 1
+fi
+"$PY" - <<'EOF'
+import sys
+if sys.version_info < (3, 9):
+    sys.exit("ERROR: Python 3.9 or newer is required, found %s" % sys.version.split()[0])
+EOF
+echo "==> Using $("$PY" -V)"
+
+# 3. Virtual environment.
+if [ ! -x ".venv/bin/python" ]; then
+    echo "==> Creating virtual environment in .venv"
+    "$PY" -m venv .venv
+fi
+# shellcheck disable=SC1091
 source .venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# 4. Dependencies.
+#    --only-binary=:all: refuses source builds. Without it, a missing wheel for a
+#    new Python version silently starts a C/C++ build that can fail hard
+#    (for example pandas + Cython on Python 3.13 / GCC 14).
+python -m pip install --upgrade pip setuptools wheel
+if ! python -m pip install --only-binary=:all: -r requirements.txt; then
+    cat >&2 <<'EOF'
 
-# Run the Streamlit app
-streamlit run app.py
+ERROR: no prebuilt wheel available for at least one dependency on this
+Python version. Options:
+  * use a Python version that has wheels (for example 3.11 or 3.12)
+  * bump the affected pin in requirements.txt to a release with wheels
+  * allow source builds by removing --only-binary=:all: from this script
+    (then also install build deps: build-essential python3-dev pkg-config)
+EOF
+    exit 1
+fi
+
+echo
+echo "==> Install complete."
+echo "    Activate with: source .venv/bin/activate"
+echo "    Start with:    streamlit run app.py"
+
+# 5. Start the app unless suppressed.
+if [ "${CTT_NO_RUN:-0}" != "1" ]; then
+    echo
+    streamlit run app.py
+fi
