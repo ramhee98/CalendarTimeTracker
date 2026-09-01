@@ -25,7 +25,8 @@ def load_settings():
         "exclude_patterns": [],
         "hide_from_discover": [],
         "selected_calendars": [],
-        "ignore_partial_names": True
+        "ignore_partial_names": True,
+        "match_calendar_names": True
     }
     if not os.path.exists(SETTINGS_FILE):
         return default_settings
@@ -184,6 +185,26 @@ def build_name_pattern(name_lower):
     suffix = r'\b' if re.search(r'\w$', name_lower) else ''
     return prefix + escaped + suffix
 
+def people_matching_calendar(calendar_name, known_people):
+    """Return the known-people entries a calendar is named after.
+
+    A calendar dedicated to one person (e.g. one named "Elena") should count
+    towards them regardless of what the individual event titles say. The
+    calendar name is compared against the primary name and every alias.
+    """
+    if not isinstance(calendar_name, str):
+        return []
+    calendar_lower = calendar_name.strip().lower()
+    if not calendar_lower:
+        return []
+
+    matches = []
+    for person_entry in known_people:
+        _, all_names = parse_person_entry(person_entry)
+        if any(name.strip().lower() == calendar_lower for name in all_names):
+            matches.append(person_entry)
+    return matches
+
 def extract_people_from_title(title, known_people, ignore_partial_names=False):
     """Extract people mentioned in an event title.
     
@@ -272,7 +293,8 @@ def format_gap(hours_val):
     days_val = hours_val / 24
     return f"{round(hours_val)}h ({round(days_val, 1)} days)"
 
-def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_names=False):
+def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_names=False,
+                             match_calendar_names=False):
     """Analyze time spent with each person."""
     time_per_person = defaultdict(float)
     events_per_person = defaultdict(list)
@@ -282,20 +304,29 @@ def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_
         if not isinstance(title, str):
             title = str(title) if pd.notna(title) else ""
         duration = row['duration_hours']
+        calendar_name = row.get('calendar', 'Unknown')
         
         # Skip excluded events
         if should_exclude(title, exclude_patterns):
             continue
         
         people = extract_people_from_title(title, known_people, ignore_partial_names)
-        
+
+        if match_calendar_names:
+            # Every event of a calendar named after someone counts towards
+            # them. Skip anyone the title already matched, otherwise the
+            # event would be added to their total twice.
+            for person in people_matching_calendar(calendar_name, known_people):
+                if person not in people:
+                    people.append(person)
+
         for person in people:
             time_per_person[person] += duration
             events_per_person[person].append({
                 'title': title,
                 'date': row['start'],
                 'duration': duration,
-                'calendar': row.get('calendar', 'Unknown')
+                'calendar': calendar_name
             })
     
     return time_per_person, events_per_person
@@ -375,6 +406,12 @@ with st.sidebar:
         help="If 'john doe' and 'john' are both tracked, events with 'john doe' won't count for 'john'",
         key="ignore_partial_names_input"
     )
+    match_calendar_names = st.checkbox(
+        "Count calendars named after a person",
+        value=st.session_state.settings.get("match_calendar_names", True),
+        help="If a calendar's name matches a tracked person (or one of their aliases), every event in it counts towards them - events whose title also names them are still counted once",
+        key="match_calendar_names_input"
+    )
     
     # Save button
     if st.button("💾 Save Settings", use_container_width=True):
@@ -387,6 +424,7 @@ with st.sidebar:
         st.session_state.settings["exclude_patterns"] = new_exclude_patterns
         st.session_state.settings["hide_from_discover"] = new_hide_from_discover
         st.session_state.settings["ignore_partial_names"] = ignore_partial_names
+        st.session_state.settings["match_calendar_names"] = match_calendar_names
         
         if save_settings(st.session_state.settings):
             st.success("Settings saved!")
@@ -499,6 +537,7 @@ if all_events:
         exclude_patterns = st.session_state.settings.get("exclude_patterns", [])
         hide_from_discover = st.session_state.settings.get("hide_from_discover", [])
         ignore_partial_names = st.session_state.settings.get("ignore_partial_names", True)
+        match_calendar_names = st.session_state.settings.get("match_calendar_names", True)
         
         # Time Spent with People section
         st.subheader("⏱️ Time Spent with People")
@@ -507,7 +546,8 @@ if all_events:
             st.warning("Add people to track in the sidebar settings")
         else:
             time_per_person, events_per_person = analyze_time_with_people(
-                df_filtered, known_people, exclude_patterns, ignore_partial_names
+                df_filtered, known_people, exclude_patterns, ignore_partial_names,
+                match_calendar_names
             )
             
             if not time_per_person:
@@ -685,7 +725,14 @@ if all_events:
                     return True
             return False
         
-        sample_df = df_filtered[~df_filtered['title'].apply(contains_known_person)]
+        attributed = df_filtered['title'].apply(contains_known_person)
+        if match_calendar_names:
+            # Events already attributed through their calendar name are not
+            # unidentified either, so keep them out of the samples.
+            attributed = attributed | df_filtered['calendar'].apply(
+                lambda c: bool(people_matching_calendar(c, known_people))
+            )
+        sample_df = df_filtered[~attributed]
         # Show unique titles only
         sample_events = sample_df.drop_duplicates(subset=['title'])[['title', 'start', 'duration_hours']].head(20)
         sample_events['start'] = sample_events['start'].dt.strftime('%Y-%m-%d')
