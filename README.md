@@ -14,7 +14,7 @@
 - 🔍 Search page: Find calendar events by name with detailed views and metrics
 - 👥 Social Analysis page: Analyze who you spend the most time with
 - Compare Periods page: side-by-side comparison of two date ranges with delta metrics
-- 📈 Trends page: visualize calendar activity over time using line and bar charts
+- 📈 Trends page: visualize calendar activity over time using an interactive line chart
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🌍 Time zone normalization support
@@ -96,6 +96,8 @@ Analyze who you spend the most time with based on calendar event titles.
 - **Calendars Named After a Person**: If a calendar's name matches a tracked person or one of their aliases, every event in it counts towards them - events whose title also names them are still counted once
 - **Exclude Patterns**: Filter out generic events like "team meeting" or "community time"
 - **Hide from Discover**: Hide irrelevant words from the discovery list without excluding events
+- **Quick Add**: Add a person by hand without editing the sidebar list
+- **Sample Events**: Review events that no tracked person matched, to spot names you are still missing
 - **Persistent Settings**: All configurations saved to `social_analysis_settings.json` (sorted alphabetically)
 
 ---
@@ -120,7 +122,9 @@ Understand how your calendar activity evolves over time.
 
 ![Trends Overview](img/trends/trends-overview.png)
 
-- Switch between daily, weekly, and monthly granularity
+- Switch between weekly and monthly granularity
+- Interactive line chart of total duration per calendar or category
+- Expandable table with the underlying per-period totals
 - Useful for spotting workload peaks and recurring patterns
 
 ---
@@ -136,6 +140,8 @@ Get intelligent analysis of your calendar data with AI-powered insights.
 - **Smart Insights**: AI provides recommendations for time management and workload optimization
 - **Customizable Prompts**: Modify the AI assistant behavior to focus on specific aspects
 - **Multiple Models**: Choose from different GPT model variants for analysis depth
+- **Verbosity Levels**: Pick low, medium, or high detail for the generated analysis
+- **Persistent Response Cache**: Results are saved to disk, survive restarts, and earlier analyses stay browsable
 
 ---
 
@@ -153,7 +159,13 @@ Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-Optionally an OpenAI API key with access to GPT models for further insights.
+Optionally an OpenAI API key with access to GPT models for further insights. Store it in a `.env` file in the project root:
+
+```bash
+OPENAI_API_KEY=sk-...
+```
+
+Opening the AI Insights page without a `.env` creates a template file with a placeholder for you to fill in.
 
 ## 🛠 Installation
 
@@ -161,6 +173,12 @@ Use the install script to get the project up and running on your local machine:
 
 ```bash
 bash install.sh
+```
+
+It requires Python 3.9 or newer, clones or updates the repository, creates a `.venv` virtual environment, installs the dependencies and then starts the app. Re-running it is safe. To install without starting the app:
+
+```bash
+CTT_NO_RUN=1 bash install.sh
 ```
 
 ## ⚙️ Configuration
@@ -176,6 +194,8 @@ A plain text file where each line contains a calendar URL and an optional name.
 Supports rich metadata like category assignment and custom calendar colors.
 
 If `calendars.json` is present, it will be used automatically and enables category-based grouping.
+
+Calendar URLs must point at the iCal feed itself - the address ending in `.ics` (in Google Calendar: "Secret address in iCal format"), not the `calendar.google.com/calendar/u/0?cid=...` sharing link, which serves a web page instead of calendar data.
 
 ### AI Configuration: `ai_config.json`
 
@@ -212,6 +232,8 @@ The app will:
 - **Background auto-refresh**: Calendars sync automatically 5 minutes before the 24-hour cache expires.
 - **In-app updates**: Check for updates and pull latest version directly from the sidebar.
 - Multi-day events are properly handled with proportional time distribution.
+- Recurring events are expanded from their `RRULE` into individual occurrences (honouring `EXDATE` exclusions) up to about 400 days ahead, so a weekly meeting is counted every week instead of once.
+- All-day events are anchored at midday UTC so they stay on the correct calendar day in any time zone.
 - Events from the **past 30 days and all future dates** are automatically re-synced with the source `.ics` file.
   - If an event is **removed** from the source calendar, it will also be **removed from the local cache**.
   - Events **older than 30 days** are preserved for historical reference, even if they no longer exist in the source.
