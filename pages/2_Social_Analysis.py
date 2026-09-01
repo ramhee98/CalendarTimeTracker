@@ -9,7 +9,7 @@ import os
 import requests
 import calendar
 from calendar_store import load_cached_events, update_event_store, expand_event_occurrences
-from utils import select_month_range, normalize_time
+from utils import select_month_range, normalize_time, ensure_ics_content
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
 st.title("👥 Social Time Analysis")
@@ -116,7 +116,9 @@ def fetch_calendar_events(url, calendar_name):
             if response.status_code != 200:
                 return []
             content = response.text
-        
+
+        ensure_ics_content(content)
+
         cal = Calendar(content)
         events = []
         events_for_cache = []  # For updating CSV cache

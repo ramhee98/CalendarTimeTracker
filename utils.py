@@ -41,6 +41,21 @@ def get_latest_github_version():
         return "Unknown"
 
 
+def ensure_ics_content(content):
+    """Raise a readable error if a fetched document is not an iCalendar feed.
+
+    A Google Calendar sharing link (.../calendar/u/0?cid=...) serves the
+    Calendar web page rather than the feed, which the ics parser reports as a
+    contentline syntax error followed by a wall of HTML.
+    """
+    if "BEGIN:VCALENDAR" not in content:
+        raise ValueError(
+            "URL did not return an .ics feed. Use the calendar's "
+            "\"Secret address in iCal format\" (.../ical/<id>/public/basic.ics), "
+            "not a calendar.google.com/calendar/u/0?cid=... link."
+        )
+
+
 def random_distinct_color(index, total_colors):
     hue = (index / total_colors)  # Distribute hues evenly (0 to 1)
     saturation = 0.7  # Maintain vivid colors
@@ -66,12 +81,7 @@ def parse_ics_from_url(url, calendar_name):
                 return []
             content = response.text
 
-        if "BEGIN:VCALENDAR" not in content:
-            raise ValueError(
-                "URL did not return an .ics feed. Use the calendar's "
-                "\"Secret address in iCal format\" (.../ical/<id>/public/basic.ics), "
-                "not a calendar.google.com/calendar/u/0?cid=... link."
-            )
+        ensure_ics_content(content)
 
         # Extract calendar name from raw text if not set by calendars file
         if calendar_name == "Unnamed":

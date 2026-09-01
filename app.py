@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import tzlocal
 import threading
 import time
-from utils import select_month_range
+from utils import select_month_range, ensure_ics_content
 
 # Streamlit UI
 st.set_page_config(page_title="CalendarTimeTracker", layout="wide")
@@ -92,12 +92,7 @@ def _fetch_and_parse_ics(url, calendar_name):
                 return []
             content = response.text
 
-        if "BEGIN:VCALENDAR" not in content:
-            raise ValueError(
-                "URL did not return an .ics feed. Use the calendar's "
-                "\"Secret address in iCal format\" (.../ical/<id>/public/basic.ics), "
-                "not a calendar.google.com/calendar/u/0?cid=... link."
-            )
+        ensure_ics_content(content)
 
         # Extract calendar name from raw text if not set by calendars file
         if calendar_name == "Unnamed":
