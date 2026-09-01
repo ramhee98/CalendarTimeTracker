@@ -171,6 +171,19 @@ def parse_person_entry(entry):
     all_names = parts  # All parts are valid names to match
     return primary, all_names
 
+def build_name_pattern(name_lower):
+    """Build a search pattern for a name/alias.
+
+    ``\\b`` only marks a boundary next to a word character, so a purely
+    symbolic alias such as an emoji ("❤️") could never match. Apply the
+    boundary only on the sides where the name actually starts/ends with a
+    word character.
+    """
+    escaped = re.escape(name_lower)
+    prefix = r'\b' if re.match(r'\w', name_lower) else ''
+    suffix = r'\b' if re.search(r'\w$', name_lower) else ''
+    return prefix + escaped + suffix
+
 def extract_people_from_title(title, known_people, ignore_partial_names=False):
     """Extract people mentioned in an event title.
     
@@ -188,7 +201,7 @@ def extract_people_from_title(title, known_people, ignore_partial_names=False):
         # Check if any of the names (primary or aliases) match
         for name in all_names:
             name_lower = name.lower()
-            pattern = r'\b' + re.escape(name_lower) + r'\b'
+            pattern = build_name_pattern(name_lower)
             if re.search(pattern, title_lower):
                 # Use the full entry as the key (to keep aliases grouped)
                 if person_entry not in found_people:
@@ -668,7 +681,7 @@ if all_events:
             title_lower = title.lower()
             for person in known_people:
                 person_lower = person.lower().strip()
-                if person_lower and re.search(r'\b' + re.escape(person_lower) + r'\b', title_lower):
+                if person_lower and re.search(build_name_pattern(person_lower), title_lower):
                     return True
             return False
         
