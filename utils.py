@@ -66,6 +66,13 @@ def parse_ics_from_url(url, calendar_name):
                 return []
             content = response.text
 
+        if "BEGIN:VCALENDAR" not in content:
+            raise ValueError(
+                "URL did not return an .ics feed. Use the calendar's "
+                "\"Secret address in iCal format\" (.../ical/<id>/public/basic.ics), "
+                "not a calendar.google.com/calendar/u/0?cid=... link."
+            )
+
         # Extract calendar name from raw text if not set by calendars file
         if calendar_name == "Unnamed":
             for line in content.splitlines():
