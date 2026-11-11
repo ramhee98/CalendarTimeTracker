@@ -16,6 +16,7 @@
 - 👥 Social Analysis page: Analyze who you spend the most time with
 - Compare Periods page: side-by-side comparison of two date ranges with delta metrics
 - 🎯 Goals page: weekly or monthly time targets per calendar or category, with streaks and hit rate
+- 🗓️ Weekly Review page: one-screen review of a week vs your usual weeks, with goals, next week's load and Markdown export
 - 📈 Trends page: visualize calendar activity over time using an interactive line chart
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
@@ -127,6 +128,20 @@ Set time targets and see whether you're living the week you intended.
 - **History**: bar chart of past periods (met / missed) with the target lines, current streak and hit rate
 - **Home page**: progress bars for every goal at the top
 - **Editable in the app**: goals are stored in `goals.json`
+
+---
+
+### 🗓️ Weekly Review
+
+A one-screen weekly ritual instead of comparing four pages by eye.
+
+- **Week picker**: defaults to last complete week; the current week is marked as in progress
+- **Headline metrics**: total hours vs the average of the previous 4, 8 or 12 weeks, event count, busiest day, latest finish and evenings past 21:00
+- **Hours by calendar/category** vs your usual week, with the biggest changes called out
+- **Weekly goals**: status of every weekly goal for that week
+- **Day by day**: stacked hours per day
+- **Next week**: hours already booked compared with a typical week
+- **Markdown export**: download the review (aggregates only, no event titles)
 
 ---
 
