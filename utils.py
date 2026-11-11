@@ -81,7 +81,8 @@ def fetch_and_parse_ics(url, calendar_name):
     else:
         response = requests.get(url)
         if response.status_code != 200:
-            return []
+            # Server error: fall back to the cached events for this calendar.
+            return load_cached_events(url).to_dict("records")
         content = response.text
 
     ensure_ics_content(content)

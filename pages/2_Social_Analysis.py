@@ -114,7 +114,8 @@ def fetch_calendar_events(url, calendar_name):
         else:
             response = requests.get(url, timeout=30)
             if response.status_code != 200:
-                return []
+                # Server error: fall back to the cached events.
+                return load_events_from_cache(url, calendar_name)
             content = response.text
 
         ensure_ics_content(content)
@@ -150,6 +151,9 @@ def fetch_calendar_events(url, calendar_name):
         if events_for_cache:
             new_df = pd.DataFrame(events_for_cache)
             update_event_store(url, new_df)
+        else:
+            # Empty feed: keep the cached events rather than dropping them.
+            return load_events_from_cache(url, calendar_name)
         
         return events
     except Exception as e:

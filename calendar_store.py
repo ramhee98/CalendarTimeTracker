@@ -233,6 +233,10 @@ def update_event_store(url, new_events_df, cutoff_days=30, additive=False):
             old_df = pd.DataFrame()
 
         combined_df = pd.concat([old_df, new_events_df], ignore_index=True)
+    elif new_events_df.empty:
+        # Feed returned no events (e.g. a transient empty response): keep
+        # serving the cache instead of making the calendar disappear.
+        return cached_df
     else:
         combined_df = new_events_df  # fallback
 
