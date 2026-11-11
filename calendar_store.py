@@ -1,4 +1,5 @@
 import os
+import re
 import hashlib
 import pandas as pd
 from datetime import datetime, timedelta, timezone
@@ -52,6 +53,13 @@ def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now
     if now is None:
         now = datetime.now(timezone.utc)
     horizon = now + timedelta(days=horizon_days)
+
+    # dateutil rejects a naive UNTIL when DTSTART is timezone-aware, which is
+    # always the case here. All-day series commonly use a DATE UNTIL
+    # (e.g. UNTIL=20250127), so make it UTC: a DATE is inclusive of that whole
+    # day, a floating DATE-TIME is treated as UTC (best effort).
+    rrule_line = re.sub(r"UNTIL=(\d{8})(?=;|$)", r"UNTIL=\1T235959Z", rrule_line)
+    rrule_line = re.sub(r"UNTIL=(\d{8}T\d{6})(?=;|$)", r"UNTIL=\1Z", rrule_line)
 
     try:
         rule = rrulestr(rrule_line, dtstart=start_utc)
