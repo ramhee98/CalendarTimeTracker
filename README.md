@@ -69,7 +69,7 @@ CalendarTimeTracker v2.0 introduces major performance improvements:
 
 ### 🔄 New Loading Controls
 - **⚡ Quick Load**: Load instantly from local cache
-- **🔄 Sync Calendars**: Fetch latest data from calendar URLs
+- **🔄 Sync Calendars**: Fetch latest data from calendar URLs. Syncs all calendars by default; Settings → 💾 Cache & sync can limit it to the calendars the page shows (Home always syncs all)
 - **Consistent UI**: Same button layout across all pages
 
 ### 📊 Optimized Data Processing
@@ -214,7 +214,7 @@ Count markers from [tag calendars](#tag-calendars), such as Oura tags exported w
 
 ### ⚙️ Settings
 
-Manage the app without editing files by hand.
+Manage the app from the browser: forms for the common settings, plus a raw text editor for every config file.
 
 - **📅 Calendars**: add, edit and remove calendars in `calendars.json` (URL, name, type, category, color) with validation for missing or duplicate URLs, Google Calendar sharing links and invalid colors. The previous file is kept as `calendars.json.bak`, and keys added by hand are preserved. A URL tester checks that a link returns a valid iCal feed. Setups that still use `calendars.txt` can be converted in one click.
 - **📊 Data & display**: how all-day and multi-day events are counted, plus the default "View data by" choice and default date range used when a page opens. Stored in `app_settings.json`.
@@ -254,7 +254,7 @@ CTT_NO_RUN=1 bash install.sh
 
 ## ⚙️ Configuration
 
-You can configure calendars in two ways with samples provided:
+You can configure calendars in two ways with samples provided. Both can also be edited on the ⚙️ Settings page.
 
 ### Option 1: `calendars.txt`
 
@@ -281,6 +281,16 @@ Some calendars contain markers rather than time blocks, for example [oura-tags-i
 ```
 
 Tag calendars are synced like any other calendar, but are left out of all hour totals, charts, goals and Social Analysis. Category and color are ignored. The Settings page points out calendars that look like tag calendars (almost all events all-day or without duration).
+
+### Files created by the app
+
+These are written by the app when you save something, are ignored by git, and can be edited on Settings → 📝 Raw files:
+
+- `app_settings.json`: counting, display, sync and Tags page settings from the Settings page
+- `goals.json`: goals from the Goals page
+- `tag_groups.json`: tag groups from the Tags page
+- `social_analysis_settings.json`: Social Analysis settings
+- `<file>.bak`: the previous version of a file saved on the Settings page
 
 ### AI Configuration: `ai_config.json`
 
@@ -318,6 +328,7 @@ The app will:
 - **In-app updates**: Check for updates and pull latest version directly from the sidebar.
 - Multi-day events are properly handled with proportional time distribution.
 - Recurring events are expanded from their `RRULE` into individual occurrences (honouring `EXDATE` exclusions) up to about 400 days ahead, so a weekly meeting is counted every week instead of once.
+- Feeds served without a declared charset are read as UTF-8 (the iCalendar default), so emojis in event names show correctly.
 - All-day events are anchored at midday UTC so they stay on the correct calendar day in any time zone.
 - Events from the **past 30 days and all future dates** are automatically re-synced with the source `.ics` file.
   - If an event is **removed** from the source calendar, it will also be **removed from the local cache**.
