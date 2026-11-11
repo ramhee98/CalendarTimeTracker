@@ -12,7 +12,8 @@ import colorsys
 import tzlocal
 import threading
 import time
-from utils import select_month_range, fetch_and_parse_ics
+from utils import select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings
+from analysis import clip_to_range, long_event_mask, find_overlaps, union_hours
 
 # Streamlit UI
 st.set_page_config(page_title="CalendarTimeTracker", layout="wide")
@@ -334,30 +335,11 @@ def show_summary_table(df, start_date, end_date):
         days_span = (end_date - start_date).days + 1
         weeks_span = days_span / 7
 
-        # Clip each event's duration to the selected range so events that
-        # straddle the boundary (or span multiple days) only contribute the
-        # in-range portion. This keeps the table consistent with the duration
-        # charts, which already clip to the period.
-        tz = df["start"].dt.tz
-        period_start = pd.Timestamp(start_date)
-        period_end = pd.Timestamp(end_date)
-        if tz is not None:
-            period_start = period_start.tz_localize(tz, nonexistent="shift_forward", ambiguous="NaT")
-            period_end = period_end.tz_localize(tz, nonexistent="shift_forward", ambiguous="NaT")
-
-        clipped = df.copy()
-        if pd.notna(period_start) and pd.notna(period_end):
-            period_end = period_end.replace(hour=23, minute=59, second=59)
-            clipped_start = clipped["start"].clip(lower=period_start)
-            clipped_end = clipped["end"].clip(upper=period_end)
-            clipped["_in_range_hours"] = ((clipped_end - clipped_start).dt.total_seconds() / 3600).clip(lower=0)
-        else:
-            # DST edge produced an undefined boundary; fall back to full duration.
-            clipped["_in_range_hours"] = clipped["duration_hours"]
-
-        # Group and aggregate on the in-range (clipped) duration
+        # Only the in-range part of events that straddle the boundary (or span
+        # multiple days) counts, consistent with the duration charts.
+        clipped = clip_to_range(df, start_date, end_date)
         summary = (
-            clipped.groupby("group")["_in_range_hours"]
+            clipped.groupby("group")["duration_hours"]
             .agg(Total_Hours="sum", Average_Hours_Per_Event="mean", Event_Count="count")
             .reset_index()
         )
@@ -562,6 +544,91 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
 
     st.altair_chart(chart, use_container_width=True)
 
+def show_data_quality(df_all_events, df_counted, start_date, end_date, accuracy):
+    """Flag long events and overlapping events that distort the totals."""
+    max_hours = accuracy.get("long_event_hours", 16)
+    in_range = clip_to_range(df_all_events, start_date, end_date)
+    long_mask = long_event_mask(in_range, max_hours)
+    long_events = in_range[long_mask]
+    timed = clip_to_range(df_counted, start_date, end_date)
+    timed = timed[~long_event_mask(timed, max_hours)]
+    overlaps = find_overlaps(timed)
+    raw_hours = ((timed["end"] - timed["start"]).dt.total_seconds() / 3600).sum()
+    double_counted = max(raw_hours - union_hours(timed), 0.0)
+
+    excluded = accuracy.get("long_events") == "exclude"
+    label = "🩺 Data Quality"
+    if not long_events.empty or double_counted > 0.05:
+        label += " — check your totals"
+    with st.expander(label):
+        total_hours = in_range["duration_hours"].sum()
+        c1, c2, c3 = st.columns(3)
+        c1.metric(
+            "Long events",
+            f"{len(long_events)}",
+            help=f"All-day events and events longer than {max_hours}h.",
+        )
+        c2.metric(
+            "Hours in long events",
+            f"{long_events['duration_hours'].sum():.1f}h",
+            delta=("excluded" if excluded else
+                   f"{long_events['duration_hours'].sum() / total_hours * 100:.0f}% of total" if total_hours else None),
+            delta_color="off",
+        )
+        c3.metric(
+            "Double-counted hours",
+            f"{double_counted:.1f}h",
+            help="Hours where two or more (non-long) events overlap and are counted more than once.",
+        )
+        st.caption(
+            "Long events are currently "
+            + ("**excluded** from all totals." if excluded else "**counted fully**.")
+            + " Change this under ⚖️ Data accuracy in the sidebar."
+        )
+
+        if not long_events.empty:
+            st.markdown("**Long events in range** (hours inside the selected range)")
+            show = long_events.sort_values("duration_hours", ascending=False)[
+                ["event_name", "calendar", "start", "end", "duration_hours"]
+            ].copy()
+            show["start"] = show["start"].dt.strftime("%Y-%m-%d %H:%M")
+            show["end"] = show["end"].dt.strftime("%Y-%m-%d %H:%M")
+            show["duration_hours"] = show["duration_hours"].round(1)
+            show.columns = ["Event", "Calendar", "Start", "End", "Hours"]
+            st.dataframe(show, use_container_width=True, hide_index=True)
+
+        if not overlaps.empty:
+            st.markdown("**Overlapping events by calendar pair**")
+            pair = overlaps.apply(
+                lambda r: " ↔ ".join(sorted([r["calendar_a"], r["calendar_b"]])), axis=1
+            )
+            by_pair = (
+                overlaps.assign(pair=pair)
+                .groupby("pair")["overlap_hours"]
+                .agg(Overlaps="count", Hours="sum")
+                .sort_values("Hours", ascending=False)
+                .reset_index()
+                .rename(columns={"pair": "Calendars"})
+            )
+            by_pair["Hours"] = by_pair["Hours"].round(1)
+            st.dataframe(by_pair, use_container_width=True, hide_index=True)
+            st.caption(
+                "Some overlap is expected (e.g. a commute calendar next to work). "
+                "The same event in two calendars is counted twice."
+            )
+
+            show = overlaps.sort_values("start_b", ascending=False).head(200).copy()
+            show["When"] = show["start_b"].dt.strftime("%Y-%m-%d %H:%M")
+            show["overlap_hours"] = show["overlap_hours"].round(2)
+            show = show[["When", "calendar_a", "event_a", "calendar_b", "event_b", "overlap_hours"]]
+            show.columns = ["When", "Calendar A", "Event A", "Calendar B", "Event B", "Overlap (h)"]
+            st.markdown("**Most recent overlaps**")
+            st.dataframe(show, use_container_width=True, hide_index=True)
+
+        if long_events.empty and overlaps.empty:
+            st.success("No long or overlapping events in the selected range.")
+
+
 def show_weekday_hour_heatmap(df, start_date, end_date):
     st.subheader("Activity Heatmap (Weekday × Hour)")
     st.caption(f"Showing events from {start_date} to {end_date}")
@@ -683,12 +750,17 @@ if all_events:
     else:
         group_mode = "calendar"
     
+    accuracy = render_accuracy_settings("home")
+
     # Process data with progress indicator
     with st.spinner("Processing and filtering calendar data..."):
         df, start_date, end_date = preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range)
         df["group"] = df[group_mode]
-    
+        df_all_events = df
+        df = apply_accuracy_settings(df, accuracy)
+
     show_summary_table(df, start_date, end_date)
+    show_data_quality(df_all_events, df, start_date, end_date, accuracy)
 
     st.subheader(f"Relative Time Charts")
     date_option = st.radio(
@@ -701,8 +773,9 @@ if all_events:
     # Show charts with progress indicator
     with st.spinner("Generating charts..."):
         show_duration_charts(df, start_date, end_date, group_mode, date_option)
-        show_weekday_hour_heatmap(df, start_date, end_date)
-        show_calendar_distribution_pie_chart(df, group_mode)
+        in_range = clip_to_range(df, start_date, end_date)
+        show_weekday_hour_heatmap(in_range, start_date, end_date)
+        show_calendar_distribution_pie_chart(in_range, group_mode)
 
 else:
     st.warning("No events loaded from calendars.")

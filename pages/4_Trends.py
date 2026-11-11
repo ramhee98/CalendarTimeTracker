@@ -1,5 +1,6 @@
 import streamlit as st
-from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range
+from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings
+from analysis import clip_to_range
 import pandas as pd
 import altair as alt
 from datetime import date
@@ -50,6 +51,7 @@ with st.spinner("Processing calendar data..."):
     df = pd.DataFrame(all_events)
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     df = normalize_time(df, tz="local")
+    df = apply_accuracy_settings(df, render_accuracy_settings("trends"))
 
 # --- View selector like app.py, shown on top ---
 if source_type == "json":
@@ -69,12 +71,8 @@ df["group"] = df[group_mode]
 with st.spinner("Applying date filters..."):
     start_date, end_date = select_month_range(df)
 
-    # Filter by date range
-    df = df[
-        ((df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)) |
-        ((df["end"].dt.date >= start_date) & (df["end"].dt.date <= end_date)) |
-        ((df["start"].dt.date <= start_date) & (df["end"].dt.date >= end_date))
-    ]
+    # Keep only the in-range part of events that straddle the boundary
+    df = clip_to_range(df, start_date, end_date)
 
 # --- Granularity selector ---
 granularity = st.radio("Time granularity:", ["Month", "Week"], horizontal=True)

@@ -4,7 +4,8 @@ from openai import OpenAI
 import os
 import json
 from datetime import date, datetime
-from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range
+from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings
+from analysis import clip_to_range
 from dotenv import load_dotenv
 from ai_config_manager import load_ai_config, get_system_prompt, get_available_prompt_types, format_prompt_template
 
@@ -164,16 +165,13 @@ with st.spinner("Processing calendar data..."):
     df = pd.DataFrame(all_events)
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     df = normalize_time(df, tz="local")
+    df = apply_accuracy_settings(df, render_accuracy_settings("ai"))
     df["group"] = df[group_mode]
 
     start_date, end_date = select_month_range(df)
 
-# Filter range
-df = df[
-    ((df["start"].dt.date >= start_date) & (df["start"].dt.date <= end_date)) |
-    ((df["end"].dt.date >= start_date) & (df["end"].dt.date <= end_date)) |
-    ((df["start"].dt.date <= start_date) & (df["end"].dt.date >= end_date))
-]
+# Filter range, counting only the in-range part of straddling events
+df = clip_to_range(df, start_date, end_date)
 
 # --- Add time grouping column ---
 if time_group == "day":

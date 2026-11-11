@@ -18,6 +18,7 @@
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🌍 Time zone normalization support
+- ⚖️ **Data accuracy**: choose whether all-day / multi-day events count, and spot overlapping (double-counted) events
 - ⚡ **Cache-first loading** with instant page loads from local cache
 - 🔄 **Background auto-refresh** syncs calendars every 24 hours automatically
 - 💾 **Dual loading controls**: Quick Load (cache) and Sync Calendars (URLs) on every page
@@ -36,6 +37,16 @@
 ![Time Distribution](img/home/home-time-distribution-per-calendar.png)
 
 ![Activity Heatmap](img/home/home-activity-heatmap.png)
+
+---
+
+## ⚖️ Data Accuracy
+
+A 3-day trip stored as one event counts as 72 hours, and the same meeting in two calendars counts twice. Both quietly inflate every chart.
+
+- **⚖️ Data accuracy** (sidebar on Home, Compare Periods, Trends and AI Insights): count all-day and multi-day events fully, or exclude them. Events longer than a configurable number of hours (default 16) also count as long. The choice is stored in `app_settings.json` and applies to every page.
+- **🩺 Data Quality** (Home): lists long events in the selected range, overlapping events grouped by calendar pair, and the total double-counted hours.
+- Events that straddle the edge of a selected range only count with their in-range part on every page, not just in the Home summary table.
 
 ---
 

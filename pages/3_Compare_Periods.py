@@ -1,5 +1,6 @@
 import streamlit as st
-from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time
+from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, render_accuracy_settings, apply_accuracy_settings
+from analysis import clip_to_range
 import pandas as pd
 import altair as alt
 import calendar
@@ -42,6 +43,7 @@ with st.spinner("Processing calendar data..."):
     df = pd.DataFrame(all_events)
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     df = normalize_time(df, tz="local")
+    df = apply_accuracy_settings(df, render_accuracy_settings("compare"))
 
 # --- View selector ---
 if source_type == "json":
@@ -149,16 +151,10 @@ if a_start > a_end or b_start > b_end:
 
 
 # --- Filter data for each period ---
-def filter_period(df, start, end):
-    return df[
-        ((df["start"].dt.date >= start) & (df["start"].dt.date <= end)) |
-        ((df["end"].dt.date >= start) & (df["end"].dt.date <= end)) |
-        ((df["start"].dt.date <= start) & (df["end"].dt.date >= end))
-    ]
-
-
-df_a = filter_period(df, a_start, a_end)
-df_b = filter_period(df, b_start, b_end)
+# Only the part of each event inside the period counts, so a trip that
+# straddles the boundary isn't counted fully in both periods.
+df_a = clip_to_range(df, a_start, a_end)
+df_b = clip_to_range(df, b_start, b_end)
 
 if df_a.empty and df_b.empty:
     st.info("No events found in either period.")

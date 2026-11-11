@@ -326,3 +326,76 @@ def preprocess_dataframe(all_events, select_month_range_func):
     df["weekday"] = df["start"].dt.day_name()
     df["hour"] = df["start"].dt.hour
     return df, start_date, end_date
+
+
+# --- App-wide settings (app_settings.json) ---
+
+APP_SETTINGS_FILE = "app_settings.json"
+DEFAULT_APP_SETTINGS = {
+    # "include" counts all-day / multi-day events fully, "exclude" drops them.
+    "long_events": "include",
+    # Events longer than this (hours) count as long even if not all-day.
+    "long_event_hours": 16,
+}
+
+
+def load_app_settings():
+    settings = dict(DEFAULT_APP_SETTINGS)
+    try:
+        with open(APP_SETTINGS_FILE, "r", encoding="utf-8") as f:
+            settings.update(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return settings
+
+
+def save_app_settings(settings):
+    with open(APP_SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2, sort_keys=True)
+
+
+def render_accuracy_settings(page_key):
+    """Sidebar controls for how all-day / multi-day events are counted.
+
+    The choice is stored in app_settings.json so every page uses the same rule.
+    """
+    settings = load_app_settings()
+    options = ["include", "exclude"]
+    labels = {"include": "Count fully", "exclude": "Exclude"}
+
+    def _save():
+        settings["long_events"] = st.session_state[f"{page_key}_long_events"]
+        settings["long_event_hours"] = st.session_state[f"{page_key}_long_event_hours"]
+        save_app_settings(settings)
+
+    with st.sidebar.expander("⚖️ Data accuracy"):
+        st.radio(
+            "All-day & multi-day events",
+            options,
+            index=options.index(settings["long_events"]) if settings["long_events"] in options else 0,
+            format_func=labels.get,
+            key=f"{page_key}_long_events",
+            on_change=_save,
+            help="A 3-day trip counts as 72 hours when counted fully. "
+                 "Exclude them to only count timed events.",
+        )
+        st.number_input(
+            "Treat events longer than (hours) as long",
+            min_value=1,
+            max_value=168,
+            value=int(settings["long_event_hours"]),
+            step=1,
+            key=f"{page_key}_long_event_hours",
+            on_change=_save,
+        )
+    return settings
+
+
+def apply_accuracy_settings(df, settings=None):
+    """Drop long events from `df` if the user chose to exclude them."""
+    from analysis import long_event_mask
+
+    settings = settings or load_app_settings()
+    if settings.get("long_events") == "exclude" and not df.empty:
+        df = df[~long_event_mask(df, settings.get("long_event_hours", 16))]
+    return df
