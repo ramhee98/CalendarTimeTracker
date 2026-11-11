@@ -18,6 +18,8 @@ pip-wheel-metadata/
 # CalendarTimeTracker specific
 *calendars*.txt
 *calendars*.json
+*calendars*.json.bak
+*calendars*.json.tmp
 data/
 ai_config.json
 ai_responses_cache.json

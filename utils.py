@@ -250,12 +250,13 @@ def select_month_range(df):
     max_date = df["start"].max().date()
 
     now = datetime.now().date()
-    # Default to last 12 months (as a reasonable default range)
-    twelve_months_ago = now - timedelta(days=365)
+    # Default range length comes from the Settings page (12 months unless changed)
+    months = int(load_app_settings().get("default_range_months", 12) or 0)
+    range_start = (pd.Timestamp(now) - pd.DateOffset(months=months)).date() if months else min_date
     # Clamp both defaults into the data range: st.date_input raises if the
     # default lies outside [min_value, max_value], e.g. when all events are
-    # older than a year or all in the future.
-    default_start = min(max(min_date, twelve_months_ago), max_date)
+    # older than the range or all in the future.
+    default_start = min(max(min_date, range_start), max_date)
     default_end = max(min(max_date, now), min_date)
 
     st.subheader("Select Date Range")
@@ -336,6 +337,10 @@ DEFAULT_APP_SETTINGS = {
     "long_events": "include",
     # Events longer than this (hours) count as long even if not all-day.
     "long_event_hours": 16,
+    # Initial "View data by" choice on every page (calendars.json only).
+    "default_view": "calendar",
+    # Initial length of the date range pickers in months (0 = all data).
+    "default_range_months": 12,
 }
 
 
@@ -487,13 +492,18 @@ def build_events_df(all_events, accuracy=None):
     return apply_accuracy_settings(df, accuracy)
 
 
+def default_view_index():
+    """Index of the default "View data by" option set on the Settings page."""
+    return 1 if load_app_settings().get("default_view") == "category" else 0
+
+
 def select_group_mode(source_type, key):
     if source_type != "json":
         return "calendar"
     return st.selectbox(
         "View data by",
         options=["calendar", "category"],
-        index=0,
+        index=default_view_index(),
         format_func=str.title,
         key=key,
     )
@@ -513,3 +523,32 @@ def render_goal_progress(goal, result):
             f" — {result['status_label']}"
         ),
     )
+
+
+# --- calendars.json editing (Settings page) ---
+
+CALENDARS_JSON = "calendars.json"
+
+
+def read_calendars_config(path=CALENDARS_JSON):
+    """Raw calendars.json content ({"calendars": [...]}, other keys kept)."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {"calendars": []}
+    if not isinstance(data, dict) or not isinstance(data.get("calendars"), list):
+        raise ValueError(f"{path} must contain an object with a \"calendars\" list")
+    return data
+
+
+def write_calendars_config(data, path=CALENDARS_JSON):
+    """Write calendars.json, keeping the previous version as calendars.json.bak."""
+    if os.path.exists(path):
+        import shutil
+        shutil.copy2(path, path + ".bak")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp, path)

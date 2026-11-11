@@ -1,5 +1,5 @@
 import streamlit as st
-from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings
+from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings
 from analysis import clip_to_range
 import pandas as pd
 import altair as alt
@@ -58,7 +58,7 @@ if source_type == "json":
     group_mode = st.selectbox(
         "View data by",
         options=["calendar", "category"],
-        index=0,
+        index=default_view_index(),
         format_func=str.title,
         key="trend_view_mode"
     )

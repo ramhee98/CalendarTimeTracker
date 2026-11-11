@@ -20,6 +20,7 @@
 - 📈 Trends page: visualize calendar activity over time using an interactive line chart
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
+- ⚙️ Settings page: edit calendars, set counting and display defaults, and manage the event cache
 - 🌍 Time zone normalization support
 - ⚖️ **Data accuracy**: choose whether all-day / multi-day events count, and spot overlapping (double-counted) events
 - ⚡ **Cache-first loading** with instant page loads from local cache
@@ -193,6 +194,16 @@ Get intelligent analysis of your calendar data with AI-powered insights.
 Upload `.ics` files and assign them to specific calendars configured via `calendars.json` or `calendars.txt`.
 
 ![Import Overview](img/import/import-overview.png)
+
+---
+
+### ⚙️ Settings
+
+Manage the app without editing files by hand.
+
+- **📅 Calendars**: add, edit and remove calendars in `calendars.json` (URL, name, category, color) with validation for missing or duplicate URLs, Google Calendar sharing links and invalid colors. The previous file is kept as `calendars.json.bak`, and keys added by hand are preserved. A URL tester checks that a link returns a valid iCal feed. Setups that still use `calendars.txt` can be converted in one click.
+- **📊 Data & display**: how all-day and multi-day events are counted, plus the default "View data by" choice and default date range used when a page opens. Stored in `app_settings.json`.
+- **💾 Cache & sync**: cached events, date range and last update per calendar; sync one or all calendars, clear one calendar's cache, and delete cache files left behind by removed calendars.
 
 ---
 

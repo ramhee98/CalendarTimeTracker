@@ -13,6 +13,7 @@ import tzlocal
 import threading
 import time
 from utils import (
+    default_view_index,
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
     build_events_df, load_goals, render_goal_progress,
 )
@@ -800,7 +801,7 @@ if all_events:
         group_mode = st.selectbox(
             "View data by",
             options=["calendar", "category"],
-            index=0,
+            index=default_view_index(),
             format_func=str.title,
             key="view_mode"
         )

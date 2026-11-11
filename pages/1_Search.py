@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-from utils import load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range
+from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range
 import pandas as pd
 
 st.set_page_config(page_title="Search Events", layout="wide")
@@ -55,7 +55,7 @@ if source_type == "json":
     group_mode = st.selectbox(
         "View data by",
         options=["calendar", "category"],
-        index=0,
+        index=default_view_index(),
         format_func=str.title,
         key="search_view_mode"
     )
