@@ -1,4 +1,5 @@
 import glob
+import json
 import os
 import re
 from datetime import datetime
@@ -12,16 +13,20 @@ from calendar_store import decode_ics_response, get_cache_file_path, hash_url
 from utils import (
     CALENDARS_JSON, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings,
     load_calendar_urls, load_tag_groups, normalize_calendar_name, normalize_time, read_calendars_config,
-    save_app_settings, write_calendars_config,
+    save_app_settings, write_calendars_config, write_file_with_backup,
 )
 
 st.set_page_config(page_title="Settings", layout="wide")
 st.title("⚙️ Settings")
-st.caption("Manage your calendars, how time is counted and displayed, the Tags page, and the local event cache.")
+st.caption("Manage your calendars, how time is counted and displayed, the Tags page, the local event cache, "
+           "and edit the config files directly.")
 
-# Messages that should survive the rerun after a save
-for msg in st.session_state.pop("settings_flash", []):
-    st.success(msg)
+# Messages that should survive the rerun after a save. They go into a
+# container that always exists: a message added above the tabs would shift
+# them, and Streamlit then re-creates them on the first tab.
+with st.container():
+    for msg in st.session_state.pop("settings_flash", []):
+        st.success(msg)
 
 
 def flash(msg):
@@ -84,8 +89,8 @@ def cache_info(path):
     return info
 
 
-tab_calendars, tab_display, tab_tags, tab_cache = st.tabs(
-    ["📅 Calendars", "📊 Data & display", "🏷️ Tags", "💾 Cache & sync"]
+tab_calendars, tab_display, tab_tags, tab_cache, tab_raw = st.tabs(
+    ["📅 Calendars", "📊 Data & display", "🏷️ Tags", "💾 Cache & sync", "📝 Raw files"]
 )
 
 # =====================================================================
@@ -577,3 +582,107 @@ with tab_cache:
                     os.remove(path)
             flash(f"Deleted {len(to_delete)} unused cache file(s): {', '.join(to_delete)}.")
             st.rerun()
+
+
+# =====================================================================
+# Raw config files
+# =====================================================================
+# File -> (what it holds, required top-level list key or None, session
+# state keys that hold a copy of it and must be reloaded after a save)
+CONFIG_FILES = {
+    "calendars.json": ("Calendars: URL, name, type, category, color", "calendars", []),
+    "calendars.txt": ("Calendars, one URL per line (only used without calendars.json)", None, []),
+    "app_settings.json": ("Settings from this page", None, ["tags_chart_selection"]),
+    "goals.json": ("Goals", "goals", []),
+    "tag_groups.json": ("Tag groups", "groups", ["tag_groups_draft", "tag_groups_next_id"]),
+    "social_analysis_settings.json": ("Social Analysis settings", None, ["settings"]),
+    "ai_config.json": ("AI Insights prompts and model settings", None, []),
+}
+
+
+def validate_config(name, text):
+    """Error message for invalid file content, or None."""
+    if not name.endswith(".json"):
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        return f"Invalid JSON at line {e.lineno}, column {e.colno}: {e.msg}."
+    if not isinstance(data, dict):
+        return "The file must contain a JSON object ({ ... })."
+    list_key = CONFIG_FILES[name][1]
+    if list_key and not isinstance(data.get(list_key, []), list):
+        return f'"{list_key}" must be a list ([ ... ]).'
+    if name == "calendars.json":
+        for i, c in enumerate(data.get("calendars", []), start=1):
+            if not isinstance(c, dict) or not str(c.get("url", "")).strip():
+                return f"Calendar {i} needs a \"url\"."
+    return None
+
+
+def render_raw_tab():
+    st.caption(
+        "Edit the config files as text. Saving checks that JSON files are valid and keeps the previous "
+        "version as `<file>.bak`. Secrets such as the OpenAI key live in `.env` and aren't shown here."
+    )
+    names = list(CONFIG_FILES)
+    name = st.selectbox(
+        "File", names,
+        format_func=lambda n: f"{n} — {CONFIG_FILES[n][0]}" + ("" if os.path.exists(n) else " (not created yet)"),
+        key="raw_file",
+    )
+    exists = os.path.exists(name)
+    original = ""
+    if exists:
+        with open(name, "r", encoding="utf-8") as f:
+            original = f.read()
+    # Bumping the version gives the text area a new key, i.e. reloads it from disk
+    version = st.session_state.setdefault("raw_version", 0)
+    text_key = f"raw_text_{name}_{version}"
+    if text_key not in st.session_state:  # Format / Load backup put their text here
+        st.session_state[text_key] = original
+    text = st.text_area(name, height=480, key=text_key, label_visibility="collapsed")
+    changed = text != original
+
+    error = validate_config(name, text) if changed and text.strip() else None
+    if error:
+        st.error(error)
+    elif changed:
+        st.caption("⚠️ Unsaved changes.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    if c1.button("💾 Save file", type="primary", use_container_width=True,
+                 disabled=not changed or bool(error) or not text.strip()):
+        write_file_with_backup(name, text if text.endswith("\n") else text + "\n")
+        for key in CONFIG_FILES[name][2]:
+            st.session_state.pop(key, None)
+        st.cache_data.clear()
+        st.session_state.raw_version += 1
+        flash(f"Saved {name}" + (f" (previous version kept as {name}.bak)." if exists else "."))
+        st.rerun()
+    if c2.button("↩️ Discard changes", use_container_width=True, disabled=not changed):
+        st.session_state.raw_version += 1
+        st.rerun()
+    if c3.button("🧹 Format JSON", use_container_width=True,
+                 disabled=not name.endswith(".json") or bool(error) or not text.strip(),
+                 help="Indent consistently. Doesn't save."):
+        st.session_state.raw_version += 1
+        st.session_state[f"raw_text_{name}_{st.session_state.raw_version}"] = (
+            json.dumps(json.loads(text), indent=2 if name != "calendars.json" else 4, ensure_ascii=False) + "\n"
+        )
+        st.rerun()
+    c4.download_button("⬇️ Download", text.encode("utf-8"), name, use_container_width=True, disabled=not text)
+
+    if os.path.exists(name + ".bak"):
+        with st.expander(f"🕘 Backup ({name}.bak)"):
+            with open(name + ".bak", "r", encoding="utf-8") as f:
+                backup = f.read()
+            st.code(backup, language="json" if name.endswith(".json") else None)
+            if st.button("Load the backup into the editor", disabled=backup == text):
+                st.session_state.raw_version += 1
+                st.session_state[f"raw_text_{name}_{st.session_state.raw_version}"] = backup
+                st.rerun()
+
+
+with tab_raw:
+    render_raw_tab()

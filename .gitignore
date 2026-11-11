@@ -20,6 +20,10 @@ pip-wheel-metadata/
 *calendars*.json
 *calendars*.json.bak
 *calendars*.json.tmp
+*.json.bak
+*.txt.bak
+*.json.tmp
+*.txt.tmp
 data/
 ai_config.json
 ai_responses_cache.json

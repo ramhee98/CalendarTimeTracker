@@ -21,7 +21,7 @@
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🏷️ Tags page: counts, trends and weekday / time-of-day patterns for tag calendars such as Oura tags
-- ⚙️ Settings page: edit calendars, set counting, display and Tags page defaults, and manage the event cache
+- ⚙️ Settings page: edit calendars, set counting, display and Tags page defaults, manage the event cache, and edit the config files as text
 - 🌍 Time zone normalization support
 - ⚖️ **Data accuracy**: choose whether all-day / multi-day events count, and spot overlapping (double-counted) events
 - ⚡ **Cache-first loading** with instant page loads from local cache
@@ -220,6 +220,7 @@ Manage the app without editing files by hand.
 - **📊 Data & display**: how all-day and multi-day events are counted, plus the default "View data by" choice and default date range used when a page opens. Stored in `app_settings.json`.
 - **🏷️ Tags**: defaults for the Tags page (see the 🏷️ Tags section above). Also stored in `app_settings.json`.
 - **💾 Cache & sync**: cached events, date range and last update per calendar; sync one or all calendars, clear one calendar's cache, and delete cache files left behind by removed calendars, individually or all at once. Also choose whether 🔄 Sync Calendars on a page fetches all calendars (default) or only those the page shows (tag calendars on the Tags page, time calendars on the other pages). Home always syncs all calendars.
+- **📝 Raw files**: edit `calendars.json`, `calendars.txt`, `app_settings.json`, `goals.json`, `tag_groups.json`, `social_analysis_settings.json` and `ai_config.json` as text. JSON is checked before saving, the previous version is kept as `<file>.bak` (and can be loaded back), and JSON can be reformatted. `.env` with the OpenAI key is not shown.
 
 ---
 

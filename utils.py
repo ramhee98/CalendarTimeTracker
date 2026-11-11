@@ -602,16 +602,21 @@ def read_calendars_config(path=CALENDARS_JSON):
     return data
 
 
-def write_calendars_config(data, path=CALENDARS_JSON):
-    """Write calendars.json, keeping the previous version as calendars.json.bak."""
+def write_file_with_backup(path, text):
+    """Write `text` to `path` atomically, keeping the previous version as
+    `<path>.bak`."""
     if os.path.exists(path):
         import shutil
         shutil.copy2(path, path + ".bak")
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-        f.write("\n")
+        f.write(text)
     os.replace(tmp, path)
+
+
+def write_calendars_config(data, path=CALENDARS_JSON):
+    """Write calendars.json, keeping the previous version as calendars.json.bak."""
+    write_file_with_backup(path, json.dumps(data, indent=4, ensure_ascii=False) + "\n")
 
 
 # --- Tag groups (tag_groups.json) ---
