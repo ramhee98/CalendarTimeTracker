@@ -4,15 +4,23 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from analysis import period_label, tag_counts_by_period, tag_occurrences, tag_summary
+from analysis import (
+    apply_tag_groups, period_label, resolve_tag_groups, suggest_tag_groups, suggest_tag_groups_by_name,
+    tag_counts_by_period,
+    tag_group_members, tag_occurrences, tag_summary,
+)
 from utils import (
-    load_calendar_urls, load_events_for_page, normalize_calendar_name, normalize_time, select_month_range,
+    load_calendar_urls, load_events_for_page, load_tag_groups, normalize_calendar_name, normalize_time,
+    save_tag_groups, select_month_range,
 )
 
 st.set_page_config(page_title="Tags", layout="wide")
 st.title("🏷️ Tags")
 st.caption("Count markers from tag calendars, such as Oura tags (☕ Coffee, 🍺 Beer). "
            "Tag calendars are never counted as time.")
+
+for msg in st.session_state.pop("tags_flash", []):
+    st.success(msg)
 
 calendars, _ = load_calendar_urls()
 tag_calendars = [c for c in (calendars or []) if c.get("type") == "tags"]
@@ -47,19 +55,122 @@ if len(tag_calendars) > 1:
         st.info("Select at least one tag calendar.")
         st.stop()
 
+# --- Tag groups (editor works on a draft until saved) ---
+groups = load_tag_groups()
+all_tags = sorted(occ["tag"].unique())
+if "tag_groups_draft" not in st.session_state:
+    st.session_state.tag_groups_draft = [dict(g, _id=i) for i, g in enumerate(groups)]
+    st.session_state.tag_groups_next_id = len(groups)
+draft = st.session_state.tag_groups_draft
+
+
+def _add_to_draft(group):
+    draft.append(dict(group, _id=st.session_state.tag_groups_next_id))
+    st.session_state.tag_groups_next_id += 1
+
+
+with st.expander("🗂️ Tag groups", expanded=not groups):
+    st.caption(
+        "Combine tags into groups, e.g. all coffee types into ☕ Coffee. A tag joins a group if you pick it "
+        "or if it matches one of the group's **keywords** exactly (comma-separated, any case, with or without "
+        "the emoji): `Flat White` matches ☕️ Flat White but not ☕️ Decaf Flat White. A keyword that is just "
+        "an emoji, like `☕`, matches every tag starting with it, including future ones. A tag may be in "
+        "several groups and then counts in each."
+    )
+    for g in list(draft):
+        gid = g["_id"]
+        c_name, c_tags, c_kw, c_del = st.columns([2, 4, 2, 0.6])
+        g["name"] = c_name.text_input("Name", g["name"], key=f"tg_name_{gid}", placeholder="☕ Coffee").strip()
+        g["tags"] = c_tags.multiselect("Tags", sorted(set(all_tags) | set(g["tags"])), default=g["tags"],
+                                       key=f"tg_tags_{gid}")
+        keywords = c_kw.text_input("Keywords", ", ".join(g["keywords"]), key=f"tg_kw_{gid}", placeholder="Flat White, Cappuccino")
+        g["keywords"] = [k.strip() for k in keywords.split(",") if k.strip()]
+        c_del.write("")
+        if c_del.button("🗑️", key=f"tg_del_{gid}", help="Remove this group"):
+            draft.remove(g)
+            st.rerun()
+        members = sorted(tag_group_members(g, all_tags))
+        st.caption(f"Matches {len(members)} tag(s): {', '.join(members)}" if members else "Matches no tags yet.")
+
+    b_add, b_suggest, b_names, b_save = st.columns(4)
+    if b_add.button("➕ Add group", use_container_width=True):
+        _add_to_draft({"name": "", "tags": [], "keywords": []})
+        st.rerun()
+    if b_suggest.button("💡 Suggest from emojis", use_container_width=True,
+                        help="One group per emoji shared by two or more tags"):
+        suggestions = suggest_tag_groups(all_tags, draft)
+        for suggestion in suggestions:
+            _add_to_draft(suggestion)
+        if suggestions:
+            st.rerun()
+        st.info("No new suggestions: every shared emoji is already used as a keyword.")
+    if b_names.button("🔤 Suggest from names", use_container_width=True,
+                      help="One group per word or phrase shared by two or more tag names, e.g. Decaf or Flat White"):
+        suggestions = suggest_tag_groups_by_name(all_tags, draft)
+        for suggestion in suggestions:
+            _add_to_draft(suggestion)
+        if suggestions:
+            st.rerun()
+        st.info("No new suggestions: no other word or phrase is shared by two or more tag names.")
+    if b_save.button("💾 Save groups", type="primary", use_container_width=True):
+        problems, names = [], set()
+        for i, g in enumerate(draft, start=1):
+            if not g["name"]:
+                problems.append(f"Group {i}: give it a name.")
+            elif g["name"] in names:
+                problems.append(f"Group {i}: the name '{g['name']}' is used twice.")
+            names.add(g["name"])
+            if not g["tags"] and not g["keywords"]:
+                problems.append(f"Group {i}: pick at least one tag or enter a keyword.")
+        if problems:
+            for problem in problems:
+                st.error(problem)
+        else:
+            save_tag_groups([{k: v for k, v in g.items() if k != "_id"} for g in draft])
+            empty = [g["name"] for g in draft if not tag_group_members(g, all_tags)]
+            st.session_state.setdefault("tags_flash", []).append(
+                f"Saved {len(draft)} group(s)."
+                + (f" Not matching any tag yet: {', '.join(empty)}." if empty else "")
+            )
+            st.rerun()
+    saved_view = [{k: v for k, v in g.items() if k != "_id"} for g in draft]
+    if saved_view != groups:
+        st.caption("⚠️ Unsaved changes: the charts below use the saved groups.")
+
 start_date, end_date = select_month_range(occ)  # summary events excluded
 today = date.today()
-in_range = occ[(occ["date"] >= start_date) & (occ["date"] <= end_date)]
-if in_range.empty:
+raw_in_range = occ[(occ["date"] >= start_date) & (occ["date"] <= end_date)]
+if raw_in_range.empty:
     st.info("No tags in the selected date range.")
     st.stop()
 
-summary = tag_summary(occ, start_date, end_date, today)
+# --- View: single tags or groups ---
+view_modes = {"grouped": "Groups + ungrouped tags", "groups": "Groups only", "tags": "Single tags"}
+resolved = resolve_tag_groups(groups, all_tags)
+if resolved:
+    mode = st.radio("Show", list(view_modes), format_func=view_modes.get, horizontal=True)
+else:
+    mode = "tags"
+view = apply_tag_groups(occ, groups, mode)
+in_range = view[(view["date"] >= start_date) & (view["date"] <= end_date)]
+if in_range.empty:
+    st.info("None of the groups has tags in the selected date range.")
+    st.stop()
+
+summary = tag_summary(view, start_date, end_date, today)
+if mode != "tags":
+    def _members(label):
+        members = resolved.get(label)
+        if not members:
+            return "—"
+        return ", ".join(members[:4]) + (f" … ({len(members)})" if len(members) > 4 else "")
+    summary.insert(1, "Members", summary["Tag"].map(_members))
 by_count = summary["Tag"].tolist()
 
 c1, c2 = st.columns([3, 1])
 with c1:
-    selected = st.multiselect("Tags in the charts", by_count, default=by_count[:8])
+    selected = st.multiselect("Tags in the charts" if mode == "tags" else "Groups / tags in the charts",
+                              by_count, default=by_count[:8])
 with c2:
     granularity = st.radio("Count per", ["Day", "Week", "Month"], index=1, horizontal=True)
 
@@ -81,7 +192,8 @@ st.dataframe(
 )
 st.download_button("Download summary as CSV", shown.to_csv(index=False).encode("utf-8"),
                    f"tags_{start_date}_{end_date}.csv", "text/csv")
-st.caption(f"{len(in_range)} tags from {start_date} to {end_date}. A multi-day tag counts once, on its first day.")
+st.caption(f"{len(raw_in_range)} tags from {start_date} to {end_date}. A multi-day tag counts once, on its first day."
+           + (" A tag in several groups counts in each group." if mode != "tags" and resolved else ""))
 
 if not selected:
     st.info("Select tags above to see their charts.")

@@ -420,3 +420,154 @@ def tag_counts_by_period(occ, period, start_date, end_date):
         return pd.DataFrame(index=pd.Index(periods, name="period_start"))
     counts = in_range.groupby([keys.rename("period_start"), "tag"]).size().unstack(fill_value=0)
     return counts.reindex(periods, fill_value=0).rename_axis("period_start")
+
+
+# --- Tag groups ---
+
+def _norm_tag(text):
+    """Compare tags ignoring case and the emoji variation selector, so
+    "☕" matches "☕️ Flat White"."""
+    return str(text).replace("️", "").strip().casefold()
+
+
+def _tag_keys(tag):
+    """The names a keyword can match exactly: the full tag, the tag without
+    its leading emoji, and the emoji alone ("☕️ Flat White" -> "☕ flat
+    white", "flat white", "☕")."""
+    keys = {_norm_tag(tag)}
+    emoji = _leading_emoji(tag)
+    if emoji:
+        keys.add(_norm_tag(emoji))
+        rest = str(tag).strip().split(" ", 1)
+        if len(rest) == 2:
+            keys.add(_norm_tag(rest[1]))
+    return keys
+
+
+def tag_group_members(group, tags):
+    """Tags (from `tags`) that are listed in the group or match one of its
+    keywords exactly (ignoring case). "Flat White" matches "☕️ Flat White"
+    but not "☕️ Decaf Flat White"; an emoji keyword such as "☕" matches every
+    tag starting with that emoji."""
+    listed = {_norm_tag(t) for t in group.get("tags", [])}
+    keywords = {_norm_tag(k) for k in group.get("keywords", []) if _norm_tag(k)}
+    return {
+        t for t in tags
+        if _norm_tag(t) in listed or keywords & _tag_keys(t)
+    }
+
+
+def resolve_tag_groups(groups, tags):
+    """{display label: sorted member tags} for groups matching at least one
+    of `tags`. A group named like a real tag that isn't one of its members
+    is labelled "<name> (group)" so the two never merge."""
+    tags = set(tags)
+    resolved = {}
+    for group in groups:
+        members = tag_group_members(group, tags)
+        if not members:
+            continue
+        label = group["name"]
+        if label in tags and label not in members:
+            label += " (group)"
+        resolved[label] = sorted(members)
+    return resolved
+
+
+def apply_tag_groups(occ, groups, mode="grouped"):
+    """Relabel tag occurrences by group.
+
+    - "tags": unchanged.
+    - "groups": one copy of each member occurrence per group, labelled with
+      the group name (a tag in two groups counts in both).
+    - "grouped": the groups plus every tag that is in no group, as itself.
+
+    A group whose name equals a real tag that isn't one of its members gets
+    " (group)" appended so the two don't merge.
+    """
+    if mode == "tags" or not groups or occ.empty:
+        return occ
+    parts, grouped_tags = [], set()
+    for label, members in resolve_tag_groups(groups, occ["tag"].unique()).items():
+        grouped_tags |= set(members)
+        part = occ[occ["tag"].isin(members)].copy()
+        part["tag"] = label
+        parts.append(part)
+    if mode == "grouped":
+        parts.append(occ[~occ["tag"].isin(grouped_tags)])
+    if not parts:
+        return occ.iloc[0:0]
+    return pd.concat(parts, ignore_index=True)
+
+
+def _leading_emoji(tag):
+    """First token of a tag if it holds no letters or digits (an emoji)."""
+    first = str(tag).strip().split(" ", 1)[0].replace("️", "")
+    return first if first and not any(ch.isalnum() for ch in first) else None
+
+
+def suggest_tag_groups(tags, existing=()):
+    """One keyword group per leading emoji shared by at least two tags,
+    skipping emojis already used as a keyword by an existing group."""
+    used = {_norm_tag(k) for g in existing for k in g.get("keywords", [])}
+    by_emoji = {}
+    for tag in sorted(tags):
+        emoji = _leading_emoji(tag)
+        if emoji:
+            by_emoji.setdefault(emoji, []).append(tag)
+    return [
+        {"name": f"{emoji} group", "tags": [], "keywords": [emoji]}
+        for emoji, members in by_emoji.items()
+        if len(members) >= 2 and _norm_tag(emoji) not in used
+    ]
+
+
+def _tag_text(tag):
+    """Tag name without its leading emoji ("☕️ Flat White" -> "Flat White")."""
+    parts = str(tag).strip().split(" ", 1)
+    return parts[1].strip() if _leading_emoji(tag) and len(parts) == 2 else str(tag).strip()
+
+
+def suggest_tag_groups_by_name(tags, existing=()):
+    """One group per word or phrase that appears (as whole words) in the
+    names of at least two tags, e.g. "Decaf" or "Flat White".
+
+    Phrases with the same members collapse into the longest one ("Flat",
+    "White" and "Flat White" -> "Flat White"). Keywords are the members'
+    exact names, so the groups work with exact keyword matching and are easy
+    to edit. Suggestions whose name or members match an existing group are
+    skipped.
+    """
+    tags = sorted(set(tags))
+    phrases = {}  # normalised phrase -> (display phrase, set of tags)
+    for tag in tags:
+        words = _tag_text(tag).split()
+        for n in range(1, len(words) + 1):
+            for i in range(len(words) - n + 1):
+                phrase = " ".join(words[i:i + n])
+                key = _norm_tag(phrase)
+                if not any(ch.isalpha() for ch in key):
+                    continue
+                phrases.setdefault(key, (phrase, set()))[1].add(tag)
+
+    best = {}  # frozenset(members) -> display phrase
+    for display, members in phrases.values():
+        if len(members) < 2:
+            continue
+        key = frozenset(members)
+        current = best.get(key)
+        if current is None or (len(display.split()), len(display), display) > (len(current.split()), len(current), current):
+            best[key] = display
+
+    existing_names = {_norm_tag(g.get("name", "")) for g in existing}
+    existing_sets = {frozenset(tag_group_members(g, tags)) for g in existing}
+    suggestions = []
+    for members, display in sorted(best.items(), key=lambda kv: (-len(kv[0]), kv[1].casefold())):
+        if _norm_tag(display) in existing_names or members in existing_sets:
+            continue
+        suggestions.append({
+            "name": display,
+            "tags": [],
+            "keywords": sorted({_tag_text(t) for t in members}, key=str.casefold),
+        })
+    return suggestions

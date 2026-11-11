@@ -574,3 +574,36 @@ def write_calendars_config(data, path=CALENDARS_JSON):
         json.dump(data, f, indent=4, ensure_ascii=False)
         f.write("\n")
     os.replace(tmp, path)
+
+
+# --- Tag groups (tag_groups.json) ---
+
+TAG_GROUPS_FILE = "tag_groups.json"
+
+
+def _clean_group(group):
+    """A valid tag group dict, or None."""
+    if not isinstance(group, dict):
+        return None
+    name = str(group.get("name", "")).strip()
+    tags = [str(t) for t in group.get("tags", []) if str(t).strip()]
+    keywords = [str(k).strip() for k in group.get("keywords", []) if str(k).strip()]
+    if not name or not (tags or keywords):
+        return None
+    return {"name": name, "tags": tags, "keywords": keywords}
+
+
+def load_tag_groups():
+    """Tag groups as a list of {name, tags, keywords} dicts, in saved order."""
+    try:
+        with open(TAG_GROUPS_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f).get("groups", [])
+    except (FileNotFoundError, json.JSONDecodeError, AttributeError):
+        return []
+    return [g for g in (_clean_group(g) for g in raw) if g]
+
+
+def save_tag_groups(groups):
+    with open(TAG_GROUPS_FILE, "w", encoding="utf-8") as f:
+        json.dump({"groups": [g for g in (_clean_group(g) for g in groups) if g]},
+                  f, indent=2, ensure_ascii=False)

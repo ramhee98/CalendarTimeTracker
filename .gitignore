@@ -26,6 +26,7 @@ ai_responses_cache.json
 social_analysis_settings.json
 app_settings.json
 goals.json
+tag_groups.json
 
 # VS Code
 .vscode/
