@@ -5,12 +5,13 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from dateutil.rrule import rrulestr
 from dateutil import parser as dtparser
+from dateutil import tz as dttz
 
 # Ensure event store directory exists
 os.makedirs("data", exist_ok=True)
 
 
-def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now=None):
+def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now=None, overridden=None):
     """Expand a single ics Event into its individual occurrences.
 
     The ``ics`` 0.7.2 library does not expand recurrence rules, so a weekly
@@ -85,12 +86,86 @@ def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now
             break
         if occ_start.date() in exdates:
             continue
+        if overridden and occ_start.date().isoformat() in overridden:
+            continue  # Replaced by a RECURRENCE-ID override event
         occ_end = (occ_local + duration).astimezone(timezone.utc)
         occ_uid = f"{uid}-{occ_start.date().isoformat()}" if uid else None
         occurrences.append((occ_start, occ_end, occ_uid))
 
     # If the rule produced nothing in range, keep the master occurrence.
     return occurrences or [(start_utc, end_utc, uid)]
+
+def parse_ical_value(value, params, default_tz):
+    """Parse an iCal DATE or DATE-TIME property value.
+
+    Returns a ``date`` for DATE values and an aware ``datetime`` otherwise. A
+    floating DATE-TIME uses its TZID parameter, else ``default_tz``.
+    """
+    value = value.strip()
+    if len(value) == 8:
+        return datetime.strptime(value, "%Y%m%d").date()
+    dt = dtparser.parse(value)
+    if dt.tzinfo is None:
+        tzid = (params or {}).get("TZID")
+        tzinfo = dttz.gettz(tzid[0]) if tzid else None
+        dt = dt.replace(tzinfo=tzinfo or default_tz)
+    return dt
+
+
+def recurrence_id_key(event):
+    """Occurrence date key (as used in occurrence uids) that an override
+    event replaces, or None if the event is not a RECURRENCE-ID override."""
+    for c in getattr(event, "extra", []):
+        if c.name == "RECURRENCE-ID":
+            rid = parse_ical_value(c.value, c.params, event.begin.datetime.tzinfo)
+            if isinstance(rid, datetime):
+                rid = rid.astimezone(timezone.utc).date()
+            return rid.isoformat()
+    return None
+
+
+def expand_calendar_events(events, errors=None, **kwargs):
+    """Expand all events of a calendar into ``(event, start, end, uid)``.
+
+    Handles RECURRENCE-ID overrides: the override replaces the master
+    series' occurrence for that date (and takes over its uid), and a
+    cancelled override just removes it. Events that fail to parse are skipped
+    and their exception appended to ``errors`` if given.
+    """
+    events = list(events)
+    overrides = {}
+    keys = {}
+    for event in events:
+        try:
+            keys[id(event)] = recurrence_id_key(event)
+        except Exception:
+            keys[id(event)] = None
+        if keys[id(event)] and event.uid:
+            overrides.setdefault(event.uid, set()).add(keys[id(event)])
+
+    result = []
+    for event in events:
+        try:
+            key = keys[id(event)]
+            if key and event.uid:
+                if (getattr(event, "status", None) or "").upper() == "CANCELLED":
+                    continue
+                for start, end, _ in expand_event_occurrences(event, **kwargs):
+                    result.append((event, start, end, f"{event.uid}-{key}"))
+            else:
+                for start, end, uid in expand_event_occurrences(
+                    event, overridden=overrides.get(event.uid), **kwargs
+                ):
+                    result.append((event, start, end, uid))
+        except Exception as e:
+            print(f"Skipping event: {e}")
+            if errors is not None:
+                errors.append(e)
+    return result
+
+
+_OCCURRENCE_SUFFIX = re.compile(r"-\d{4}-\d{2}-\d{2}$")
+
 
 def hash_url(url):
     return hashlib.md5(url.encode()).hexdigest()
@@ -141,6 +216,13 @@ def update_event_store(url, new_events_df, cutoff_days=30, additive=False):
                 old_df = cached_df[cached_df["start"] < cutoff]
             # Replace events by dropping any matching UIDs
             uids_to_keep = set(new_events_df["uid"])
+            # Rows cached under a series' bare uid (e.g. RECURRENCE-ID
+            # overrides from older versions) are superseded by the series'
+            # date-suffixed occurrence rows.
+            uids_to_keep |= {
+                _OCCURRENCE_SUFFIX.sub("", u) for u in uids_to_keep
+                if isinstance(u, str) and _OCCURRENCE_SUFFIX.search(u)
+            }
             old_df = old_df[~old_df["uid"].isin(uids_to_keep)]
         else:
             old_df = pd.DataFrame()

@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta, timezone
 import altair as alt
 import os
 import shutil
-from calendar_store import update_event_store, load_cached_events, expand_event_occurrences
+from calendar_store import update_event_store, load_cached_events, expand_calendar_events
 from ics import Calendar
 import calendar
 import json
@@ -104,23 +104,17 @@ def _fetch_and_parse_ics(url, calendar_name):
         # Parse using ics
         cal = Calendar(content)
         events = []
-        for event in cal.events:
-            try:
-                name = event.name or "Untitled Event"  # Add event name
-                # Expand recurring events into individual occurrences.
-                for start, end, occ_uid in expand_event_occurrences(event):
-                    duration = (end - start).total_seconds() / 3600
-                    events.append({
-                        "calendar": calendar_name,
-                        "event_name": name,  # Add event name
-                        "start": start,
-                        "end": end,
-                        "duration_hours": duration,
-                        "uid": occ_uid
-                    })
-            except Exception as e:
-                print(f"Skipping event: {e}")
-                continue
+        # Expand recurring events into individual occurrences.
+        for event, start, end, occ_uid in expand_calendar_events(cal.events):
+            duration = (end - start).total_seconds() / 3600
+            events.append({
+                "calendar": calendar_name,
+                "event_name": event.name or "Untitled Event",
+                "start": start,
+                "end": end,
+                "duration_hours": duration,
+                "uid": occ_uid
+            })
 
         new_df = pd.DataFrame(events)
         combined_df = update_event_store(url, new_df)

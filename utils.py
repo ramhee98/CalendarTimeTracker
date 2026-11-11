@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import tzlocal
 from ics import Calendar
 import calendar as cal_module
-from calendar_store import update_event_store, load_cached_events, expand_event_occurrences
+from calendar_store import update_event_store, load_cached_events, expand_calendar_events
 
 
 def get_version():
@@ -93,23 +93,17 @@ def parse_ics_from_url(url, calendar_name):
         # Parse using ics
         ics_cal = Calendar(content)
         events = []
-        for event in ics_cal.events:
-            try:
-                name = event.name or "Untitled Event"
-                # Expand recurring events into individual occurrences.
-                for start, end, occ_uid in expand_event_occurrences(event):
-                    duration = (end - start).total_seconds() / 3600
-                    events.append({
-                        "calendar": calendar_name,
-                        "event_name": name,
-                        "start": start,
-                        "end": end,
-                        "duration_hours": duration,
-                        "uid": occ_uid
-                    })
-            except Exception as e:
-                print(f"Skipping event: {e}")
-                continue
+        # Expand recurring events into individual occurrences.
+        for event, start, end, occ_uid in expand_calendar_events(ics_cal.events):
+            duration = (end - start).total_seconds() / 3600
+            events.append({
+                "calendar": calendar_name,
+                "event_name": event.name or "Untitled Event",
+                "start": start,
+                "end": end,
+                "duration_hours": duration,
+                "uid": occ_uid
+            })
 
         new_df = pd.DataFrame(events)
         combined_df = update_event_store(url, new_df)

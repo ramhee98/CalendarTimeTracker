@@ -8,7 +8,7 @@ import json
 import os
 import requests
 import calendar
-from calendar_store import load_cached_events, update_event_store, expand_event_occurrences
+from calendar_store import load_cached_events, update_event_store, expand_calendar_events
 from utils import select_month_range, normalize_time, ensure_ics_content
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
@@ -123,32 +123,28 @@ def fetch_calendar_events(url, calendar_name):
         events = []
         events_for_cache = []  # For updating CSV cache
         
-        for event in cal.events:
-            try:
-                event_name = event.name or ""
-                # Expand recurring events into individual occurrences.
-                for start, end, occ_uid in expand_event_occurrences(event):
-                    duration = (end - start).total_seconds() / 3600
+        # Expand recurring events into individual occurrences.
+        for event, start, end, occ_uid in expand_calendar_events(cal.events):
+            event_name = event.name or ""
+            duration = (end - start).total_seconds() / 3600
 
-                    events.append({
-                        "calendar": calendar_name,
-                        "title": event_name,
-                        "start": start,
-                        "end": end,
-                        "duration_hours": duration,
-                    })
+            events.append({
+                "calendar": calendar_name,
+                "title": event_name,
+                "start": start,
+                "end": end,
+                "duration_hours": duration,
+            })
 
-                    # Also prepare for CSV cache update
-                    events_for_cache.append({
-                        "calendar": calendar_name,
-                        "event_name": event_name,
-                        "start": start,
-                        "end": end,
-                        "duration_hours": duration,
-                        "uid": occ_uid,
-                    })
-            except Exception:
-                continue
+            # Also prepare for CSV cache update
+            events_for_cache.append({
+                "calendar": calendar_name,
+                "event_name": event_name,
+                "start": start,
+                "end": end,
+                "duration_hours": duration,
+                "uid": occ_uid,
+            })
         
         # Update the shared CSV cache so other pages benefit
         if events_for_cache:
