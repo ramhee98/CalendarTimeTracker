@@ -315,6 +315,37 @@ def format_days_until(days):
         return "tomorrow"
     return f"in {days} days"
 
+def is_all_day_event(start, end):
+    """Heuristic: all-day events are stored as whole days anchored at midnight
+    UTC (older cache entries) or noon UTC (see expand_event_occurrences)."""
+    s, e = start.tz_convert("UTC"), end.tz_convert("UTC")
+    duration = e - s
+    return (
+        duration >= pd.Timedelta(days=1)
+        and duration % pd.Timedelta(days=1) == pd.Timedelta(0)
+        and s.time() == e.time()
+        and s.minute == 0 and s.second == 0
+        and s.hour in (0, 12)
+    )
+
+def event_day_span(start, end):
+    """Return (first_date, last_date) of the calendar days an event covers.
+
+    All-day events have an exclusive end date (a Jul 25-30 trip ends Jul 31),
+    and a timed event ending exactly at midnight doesn't cover the next day.
+    """
+    if is_all_day_event(start, end):
+        return start.tz_convert("UTC").date(), end.tz_convert("UTC").date() - timedelta(days=1)
+    last = (end - pd.Timedelta(microseconds=1)).date() if end > start else start.date()
+    return start.date(), last
+
+def format_event_when(evt):
+    """'2026-07-25' for single-day events, '2026-07-25 → 2026-07-30' otherwise."""
+    first, last = event_day_span(evt['date'], evt['end'])
+    if first == last:
+        return first.strftime('%Y-%m-%d')
+    return f"{first.strftime('%Y-%m-%d')} → {last.strftime('%Y-%m-%d')} ({(last - first).days + 1} days)"
+
 def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_names=False,
                              match_calendar_names=False):
     """Analyze time spent with each person."""
@@ -347,7 +378,10 @@ def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_
             events_per_person[person].append({
                 'title': title,
                 'date': row['start'],
+                'end': row['end'],
                 'duration': duration,
+                # Unclipped length, for display when the event extends past the range
+                'full_duration': row.get('full_duration_hours', duration),
                 'calendar': calendar_name
             })
     
@@ -553,6 +587,22 @@ if all_events:
         )
         df_filtered = df[mask]
 
+        # Clip durations to the selected range so a multi-day event that
+        # straddles the boundary only counts its in-range hours (same as the
+        # Home page). Events with no in-range time (e.g. an all-day event whose
+        # exclusive end falls on the range's first day) are dropped.
+        df_people = df_filtered.copy()
+        tz = df['start'].dt.tz
+        period_start = pd.Timestamp(start_date).tz_localize(tz, nonexistent="shift_forward", ambiguous="NaT")
+        period_end = pd.Timestamp(end_date + timedelta(days=1)).tz_localize(tz, nonexistent="shift_forward", ambiguous="NaT")
+        df_people['full_duration_hours'] = df_people['duration_hours']
+        if pd.notna(period_start) and pd.notna(period_end):
+            in_range = (
+                df_people['end'].clip(upper=period_end) - df_people['start'].clip(lower=period_start)
+            ).dt.total_seconds() / 3600
+            df_people['duration_hours'] = in_range.clip(lower=0)
+            df_people = df_people[(df_people['duration_hours'] > 0) | (df_people['full_duration_hours'] == 0)]
+
         st.info(f"Analyzing {len(df_filtered)} events from {start_date} to {end_date}")        
         # Get current settings
         known_people = st.session_state.settings.get("known_people", [])
@@ -568,7 +618,7 @@ if all_events:
             st.warning("Add people to track in the sidebar settings")
         else:
             time_per_person, events_per_person = analyze_time_with_people(
-                df_filtered, known_people, exclude_patterns, ignore_partial_names,
+                df_people, known_people, exclude_patterns, ignore_partial_names,
                 match_calendar_names
             )
             
@@ -591,10 +641,12 @@ if all_events:
                 for person, hours in sorted(time_per_person.items(), key=lambda x: x[1], reverse=True):
                     event_count = len(events_per_person[person])
                     person_events = events_per_person[person]
-                    # Last seen = most recent event that has already started
-                    past_dates = [evt['date'] for evt in person_events if evt['date'] <= now]
-                    last_seen_dt = max(past_dates) if past_dates else None
-                    days_ago = (today - last_seen_dt.normalize()).days if last_seen_dt is not None else None
+                    # Last seen = last day covered by an event that has already
+                    # started, capped at today (an ongoing multi-day event = today)
+                    past_days = [min(event_day_span(evt['date'], evt['end'])[1], today.date())
+                                 for evt in person_events if evt['date'] <= now]
+                    last_seen_dt = max(past_days) if past_days else None
+                    days_ago = (today.date() - last_seen_dt).days if last_seen_dt is not None else None
                     # Next = earliest upcoming event
                     upcoming = [evt['date'] for evt in upcoming_per_person.get(person, [])]
                     next_dt = min(upcoming) if upcoming else None
@@ -679,7 +731,11 @@ if all_events:
                     when_str = f" · {' · '.join(when_parts)}" if when_parts else ""
                     with st.expander(f"{display_name.title()} - {len(person_events)} events ({calendar_breakdown}){when_str}"):
                         for evt in sorted(person_events, key=lambda x: x['date'], reverse=True):
-                            st.write(f"• **{evt['title']}** - {evt['date'].strftime('%Y-%m-%d')} ({evt['duration']:.1f}h) - *{evt['calendar']}*")
+                            if abs(evt['full_duration'] - evt['duration']) > 0.01:
+                                hours_str = f"{evt['duration']:.1f}h in range of {evt['full_duration']:.1f}h"
+                            else:
+                                hours_str = f"{evt['duration']:.1f}h"
+                            st.write(f"• **{evt['title']}** - {format_event_when(evt)} ({hours_str}) - *{evt['calendar']}*")
         
         st.divider()
         
