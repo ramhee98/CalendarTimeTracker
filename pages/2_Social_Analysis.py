@@ -121,41 +121,27 @@ def fetch_calendar_events(url, calendar_name):
         ensure_ics_content(content)
 
         cal = Calendar(content)
-        events = []
         events_for_cache = []  # For updating CSV cache
-        
+
         # Expand recurring events into individual occurrences.
         for event, start, end, occ_uid in expand_calendar_events(cal.events):
-            event_name = event.name or ""
-            duration = (end - start).total_seconds() / 3600
-
-            events.append({
-                "calendar": calendar_name,
-                "title": event_name,
-                "start": start,
-                "end": end,
-                "duration_hours": duration,
-            })
-
-            # Also prepare for CSV cache update
             events_for_cache.append({
                 "calendar": calendar_name,
-                "event_name": event_name,
+                "event_name": event.name or "",
                 "start": start,
                 "end": end,
-                "duration_hours": duration,
+                "duration_hours": (end - start).total_seconds() / 3600,
                 "uid": occ_uid,
             })
-        
-        # Update the shared CSV cache so other pages benefit
+
+        # Update the shared CSV cache so other pages benefit. An empty feed
+        # leaves the cache untouched.
         if events_for_cache:
-            new_df = pd.DataFrame(events_for_cache)
-            update_event_store(url, new_df)
-        else:
-            # Empty feed: keep the cached events rather than dropping them.
-            return load_events_from_cache(url, calendar_name)
-        
-        return events
+            update_event_store(url, pd.DataFrame(events_for_cache))
+
+        # Return the merged cache, not just the feed, so Sync shows the same
+        # history (events older than the feed serves) as Quick Load.
+        return load_events_from_cache(url, calendar_name)
     except Exception as e:
         st.error(f"Error loading {calendar_name}: {e}")
         return []
