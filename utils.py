@@ -252,8 +252,11 @@ def select_month_range(df):
     now = datetime.now().date()
     # Default to last 12 months (as a reasonable default range)
     twelve_months_ago = now - timedelta(days=365)
-    default_start = max(min_date, twelve_months_ago)
-    default_end = min(max_date, now)
+    # Clamp both defaults into the data range: st.date_input raises if the
+    # default lies outside [min_value, max_value], e.g. when all events are
+    # older than a year or all in the future.
+    default_start = min(max(min_date, twelve_months_ago), max_date)
+    default_end = max(min(max_date, now), min_date)
 
     st.subheader("Select Date Range")
 

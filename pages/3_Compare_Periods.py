@@ -97,13 +97,19 @@ col_a, col_b = st.columns(2)
 
 defaults = presets[preset]
 
+
+def clamp(d):
+    """Keep a preset date inside the data range (st.date_input raises otherwise)."""
+    return min(max(d, min_date), max_date)
+
+
 with col_a:
     st.markdown("**Period A**")
     a_col1, a_col2 = st.columns(2)
     with a_col1:
         a_start = st.date_input(
             "Start",
-            value=max(min_date, defaults["a_start"]) if defaults else min_date,
+            value=clamp(defaults["a_start"]) if defaults else min_date,
             min_value=min_date,
             max_value=max_date,
             key="a_start",
@@ -111,7 +117,7 @@ with col_a:
     with a_col2:
         a_end = st.date_input(
             "End",
-            value=min(max_date, defaults["a_end"]) if defaults else max_date,
+            value=clamp(defaults["a_end"]) if defaults else max_date,
             min_value=min_date,
             max_value=max_date,
             key="a_end",
@@ -123,7 +129,7 @@ with col_b:
     with b_col1:
         b_start = st.date_input(
             "Start",
-            value=max(min_date, defaults["b_start"]) if defaults else min_date,
+            value=clamp(defaults["b_start"]) if defaults else min_date,
             min_value=min_date,
             max_value=max_date,
             key="b_start",
@@ -131,7 +137,7 @@ with col_b:
     with b_col2:
         b_end = st.date_input(
             "End",
-            value=min(max_date, defaults["b_end"]) if defaults else max_date,
+            value=clamp(defaults["b_end"]) if defaults else max_date,
             min_value=min_date,
             max_value=max_date,
             key="b_end",
