@@ -7,16 +7,17 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from analysis import is_all_day
+from analysis import is_all_day, merge_tag_variants, tag_occurrences
 from calendar_store import decode_ics_response, get_cache_file_path, hash_url
 from utils import (
-    CALENDARS_JSON, ensure_ics_content, fetch_and_parse_ics, load_app_settings,
-    load_calendar_urls, read_calendars_config, save_app_settings, write_calendars_config,
+    CALENDARS_JSON, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings,
+    load_calendar_urls, load_tag_groups, normalize_calendar_name, normalize_time, read_calendars_config,
+    save_app_settings, write_calendars_config,
 )
 
 st.set_page_config(page_title="Settings", layout="wide")
 st.title("⚙️ Settings")
-st.caption("Manage your calendars, how time is counted and displayed, and the local event cache.")
+st.caption("Manage your calendars, how time is counted and displayed, the Tags page, and the local event cache.")
 
 # Messages that should survive the rerun after a save
 for msg in st.session_state.pop("settings_flash", []):
@@ -83,7 +84,9 @@ def cache_info(path):
     return info
 
 
-tab_calendars, tab_display, tab_cache = st.tabs(["📅 Calendars", "📊 Data & display", "💾 Cache & sync"])
+tab_calendars, tab_display, tab_tags, tab_cache = st.tabs(
+    ["📅 Calendars", "📊 Data & display", "🏷️ Tags", "💾 Cache & sync"]
+)
 
 # =====================================================================
 # Calendars
@@ -287,6 +290,143 @@ with tab_display:
             save_app_settings(settings)
             flash("Saved. Pages use the new defaults the next time they open.")
             st.rerun()
+
+# =====================================================================
+# Tags page
+# =====================================================================
+RANGE_OPTIONS = [1, 3, 6, 12, 24, 0]
+
+
+def range_label(months):
+    return "All data" if months == 0 else f"Last {months} month{'s' if months != 1 else ''}"
+
+
+def known_tags(merge):
+    """Tag names in the cached tag calendars (without monthly summaries)."""
+    events, _ = load_all_events_from_cache("tags")
+    if not events:
+        return []
+    df = pd.DataFrame(events)
+    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
+    occ = tag_occurrences(normalize_time(df, tz="local"))
+    if merge:
+        occ = merge_tag_variants(occ)
+    return sorted(occ["tag"].unique(), key=str.casefold)
+
+
+def render_tags_tab():
+    calendars, _ = load_calendar_urls()
+    tag_calendar_names = sorted({normalize_calendar_name(c["custom_name"])
+                                 for c in (calendars or []) if c.get("type") == "tags"})
+    if not tag_calendar_names:
+        st.info("No tag calendars configured. Set a calendar's Type to `tags` on the Calendars tab first.")
+        return
+
+    settings = load_app_settings()
+    tags = known_tags(settings["tags_merge_variants"])
+    group_names = [g["name"] for g in load_tag_groups()]
+    if not tags:
+        st.caption("No tag events cached yet: sync the tag calendars to pick hidden or fixed tags here.")
+
+    def keep_known(values, options):
+        return [v for v in values if v in options]
+
+    with st.form("tag_settings"):
+        st.markdown("**Charts**")
+        chart_mode = st.radio(
+            "Preselected in the charts",
+            ["top", "fixed"],
+            index=1 if settings["tags_chart_mode"] == "fixed" else 0,
+            format_func={"top": "The most frequent", "fixed": "A fixed list"}.get,
+            horizontal=True,
+        )
+        top_n = st.number_input("How many of the most frequent", min_value=1, max_value=20,
+                                value=int(settings["tags_chart_top_n"]), step=1)
+        fixed_options = group_names + [t for t in tags if t not in group_names]
+        fixed = st.multiselect(
+            "Fixed list (groups and tags, in this order)",
+            fixed_options,
+            default=keep_known(settings["tags_chart_fixed"], fixed_options),
+            help="Groups only appear in the group views and single tags only where they aren't grouped, "
+                 "so pick both if you switch views.",
+        )
+        fill = st.checkbox(
+            "Replace fixed entries without data in the date range by the most frequent ones",
+            value=bool(settings["tags_chart_fill"]),
+        )
+        keep = st.checkbox(
+            "Keep my chart selection when I switch the view or date range",
+            value=bool(settings["tags_keep_selection"]),
+            help="Otherwise the selection resets to the preselection above whenever the list of tags changes. "
+                 "Kept until the browser tab is reloaded.",
+        )
+
+        st.markdown("**Defaults when the page opens**")
+        view_labels = {"grouped": "Groups + ungrouped tags", "groups": "Groups only", "tags": "Single tags"}
+        views = list(view_labels)
+        default_view = st.radio("Show", views, format_func=view_labels.get, horizontal=True,
+                                index=views.index(settings["tags_default_view"])
+                                if settings["tags_default_view"] in views else 0,
+                                help="Only used once tag groups exist.")
+        granularities = ["Day", "Week", "Month"]
+        granularity = st.radio("Count per", granularities, horizontal=True,
+                               index=granularities.index(settings["tags_default_granularity"])
+                               if settings["tags_default_granularity"] in granularities else 1)
+        range_choices = [None] + RANGE_OPTIONS
+        current = settings["tags_range_months"]
+        tags_range = st.selectbox(
+            "Date range",
+            range_choices,
+            index=range_choices.index(current) if current in range_choices else 0,
+            format_func=lambda m: (f"Same as the other pages ({range_label(int(settings['default_range_months'] or 0))})"
+                                   if m is None else range_label(m)),
+        )
+        if len(tag_calendar_names) > 1:
+            default_calendars = st.multiselect(
+                "Tag calendars", tag_calendar_names,
+                default=keep_known(settings["tags_default_calendars"], tag_calendar_names),
+                help="Leave empty to select all.",
+            )
+        else:
+            default_calendars = settings["tags_default_calendars"]
+
+        st.markdown("**Tag names**")
+        hidden_options = sorted(set(tags) | set(settings["tags_hidden"]), key=str.casefold)
+        hidden = st.multiselect(
+            "Hidden tags", hidden_options, default=settings["tags_hidden"],
+            help="Left out of the Tags page entirely, including groups and keywords.",
+        )
+        merge = st.checkbox(
+            "Merge tags that differ only in the emoji variant or spacing (☕ Coffee and ☕️ Coffee)",
+            value=bool(settings["tags_merge_variants"]),
+        )
+
+        if st.form_submit_button("💾 Save", type="primary"):
+            if chart_mode == "fixed" and not fixed:
+                st.error("Pick at least one group or tag for the fixed list, or use the most frequent.")
+            else:
+                settings.update({
+                    "tags_chart_mode": chart_mode,
+                    "tags_chart_top_n": int(top_n),
+                    "tags_chart_fixed": fixed,
+                    "tags_chart_fill": fill,
+                    "tags_keep_selection": keep,
+                    "tags_default_view": default_view,
+                    "tags_default_granularity": granularity,
+                    "tags_range_months": tags_range,
+                    "tags_default_calendars": default_calendars,
+                    "tags_hidden": hidden,
+                    "tags_merge_variants": merge,
+                })
+                save_app_settings(settings)
+                # Let the Tags page start from the new preselection
+                st.session_state.pop("tags_chart_selection", None)
+                flash("Saved the Tags settings.")
+                st.rerun()
+
+
+with tab_tags:
+    render_tags_tab()
 
 # =====================================================================
 # Cache & sync

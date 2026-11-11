@@ -5,12 +5,12 @@ import pandas as pd
 import streamlit as st
 
 from analysis import (
-    apply_tag_groups, period_label, resolve_tag_groups, suggest_tag_groups, suggest_tag_groups_by_name,
+    apply_tag_groups, default_chart_labels, drop_tags, merge_tag_variants, period_label, resolve_tag_groups, suggest_tag_groups, suggest_tag_groups_by_name,
     tag_counts_by_period,
     tag_group_members, tag_occurrences, tag_summary,
 )
 from utils import (
-    load_calendar_urls, load_events_for_page, load_tag_groups, normalize_calendar_name, normalize_time,
+    load_app_settings, load_calendar_urls, load_events_for_page, load_tag_groups, normalize_calendar_name, normalize_time,
     save_tag_groups, select_month_range,
 )
 
@@ -21,6 +21,8 @@ st.caption("Count markers from tag calendars, such as Oura tags (☕ Coffee, �
 
 for msg in st.session_state.pop("tags_flash", []):
     st.success(msg)
+
+settings = load_app_settings()
 
 calendars, _ = load_calendar_urls()
 tag_calendars = [c for c in (calendars or []) if c.get("type") == "tags"]
@@ -42,6 +44,11 @@ with st.spinner("Processing tags..."):
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     df = normalize_time(df, tz="local")
     occ = tag_occurrences(df)
+    if settings["tags_merge_variants"]:
+        occ = merge_tag_variants(occ)
+    hidden_count = occ["tag"].nunique()
+    occ = drop_tags(occ, settings["tags_hidden"])
+    hidden_count -= occ["tag"].nunique()
 
 if occ.empty:
     st.warning("The tag calendars contain no tag events.")
@@ -49,7 +56,8 @@ if occ.empty:
 
 if len(tag_calendars) > 1:
     names = sorted(occ["calendar"].unique())
-    chosen = st.multiselect("Tag calendars", names, default=names)
+    preferred = [n for n in settings["tags_default_calendars"] if n in names]
+    chosen = st.multiselect("Tag calendars", names, default=preferred or names)
     occ = occ[occ["calendar"].isin(chosen)]
     if occ.empty:
         st.info("Select at least one tag calendar.")
@@ -137,7 +145,7 @@ with st.expander("🗂️ Tag groups", expanded=not groups):
     if saved_view != groups:
         st.caption("⚠️ Unsaved changes: the charts below use the saved groups.")
 
-start_date, end_date = select_month_range(occ)  # summary events excluded
+start_date, end_date = select_month_range(occ, months=settings["tags_range_months"])  # summary events excluded
 today = date.today()
 raw_in_range = occ[(occ["date"] >= start_date) & (occ["date"] <= end_date)]
 if raw_in_range.empty:
@@ -148,7 +156,10 @@ if raw_in_range.empty:
 view_modes = {"grouped": "Groups + ungrouped tags", "groups": "Groups only", "tags": "Single tags"}
 resolved = resolve_tag_groups(groups, all_tags)
 if resolved:
-    mode = st.radio("Show", list(view_modes), format_func=view_modes.get, horizontal=True)
+    modes = list(view_modes)
+    default_mode = settings["tags_default_view"]
+    mode = st.radio("Show", modes, format_func=view_modes.get, horizontal=True,
+                    index=modes.index(default_mode) if default_mode in modes else 0)
 else:
     mode = "tags"
 view = apply_tag_groups(occ, groups, mode)
@@ -167,12 +178,31 @@ if mode != "tags":
     summary.insert(1, "Members", summary["Tag"].map(_members))
 by_count = summary["Tag"].tolist()
 
+default_selection = default_chart_labels(
+    by_count, settings["tags_chart_mode"], int(settings["tags_chart_top_n"]),
+    settings["tags_chart_fixed"], settings["tags_chart_fill"],
+)
+# The picker is rebuilt whenever its options change (other view or date
+# range). Optionally carry the previous picks over instead of resetting.
+remembered = st.session_state.get("tags_chart_selection")
+if settings["tags_keep_selection"] and remembered is not None:
+    default_selection = [label for label in remembered if label in by_count]
+
+granularities = ["Day", "Week", "Month"]
 c1, c2 = st.columns([3, 1])
 with c1:
     selected = st.multiselect("Tags in the charts" if mode == "tags" else "Groups / tags in the charts",
-                              by_count, default=by_count[:8])
+                              by_count, default=default_selection)
 with c2:
-    granularity = st.radio("Count per", ["Day", "Week", "Month"], index=1, horizontal=True)
+    granularity = st.radio("Count per", granularities, horizontal=True,
+                           index=granularities.index(settings["tags_default_granularity"])
+                           if settings["tags_default_granularity"] in granularities else 1)
+if settings["tags_keep_selection"]:
+    # Keep picks that aren't available right now, e.g. single tags while
+    # showing groups, so switching back restores them.
+    st.session_state.tags_chart_selection = selected + [
+        label for label in (remembered or []) if label not in by_count and label not in selected
+    ]
 
 # --- Summary table ---
 st.subheader("Summary")
@@ -193,7 +223,8 @@ st.dataframe(
 st.download_button("Download summary as CSV", shown.to_csv(index=False).encode("utf-8"),
                    f"tags_{start_date}_{end_date}.csv", "text/csv")
 st.caption(f"{len(raw_in_range)} tags from {start_date} to {end_date}. A multi-day tag counts once, on its first day."
-           + (" A tag in several groups counts in each group." if mode != "tags" and resolved else ""))
+           + (" A tag in several groups counts in each group." if mode != "tags" and resolved else "")
+           + (f" {hidden_count} hidden tag(s) are left out (Settings → Tags)." if hidden_count else ""))
 
 if not selected:
     st.info("Select tags above to see their charts.")

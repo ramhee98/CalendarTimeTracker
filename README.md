@@ -21,7 +21,7 @@
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🏷️ Tags page: counts, trends and weekday / time-of-day patterns for tag calendars such as Oura tags
-- ⚙️ Settings page: edit calendars, set counting and display defaults, and manage the event cache
+- ⚙️ Settings page: edit calendars, set counting, display and Tags page defaults, and manage the event cache
 - 🌍 Time zone normalization support
 - ⚖️ **Data accuracy**: choose whether all-day / multi-day events count, and spot overlapping (double-counted) events
 - ⚡ **Cache-first loading** with instant page loads from local cache
@@ -208,6 +208,7 @@ Count markers from [tag calendars](#tag-calendars), such as Oura tags exported w
 - **Time of day**: when timed tags happen (e.g. coffee after 14:00); all-day tags have no time and are left out
 - Monthly "📊 Tag Summary" events from oura-tags-ical are ignored, and a multi-day tag counts once, on its first day
 - **🗂️ Tag groups**: combine tags, e.g. every coffee type into ☕ Coffee or 🍷 Wine and 🍺 Beer into Alcohol. Pick member tags and/or add keywords that match tag names exactly, ignoring case and the emoji (`Flat White` matches ☕️ Flat White but not ☕️ Decaf Flat White). A keyword that is just an emoji, like `☕`, matches every tag starting with it, including coffee types you log in the future. **💡 Suggest from emojis** creates one group per emoji shared by several tags. **🔤 Suggest from names** creates one group per word or phrase shared by several tag names (e.g. Decaf, Flat White), with the matching tag names as keywords. A tag may be in several groups (e.g. Coffee and Decaf) and counts in each. Show groups with the remaining single tags, groups only, or single tags only. Groups are stored in `tag_groups.json`
+- **Your defaults** (Settings → 🏷️ Tags): which tags or groups the charts start with (the N most frequent, 8 by default, or a fixed list), keeping your chart selection when you switch view or date range, the initial view and "Count per", a separate date range, preselected tag calendars, hidden tags, and merging tags that differ only in the emoji variant (☕ / ☕️)
 
 ---
 
@@ -217,6 +218,7 @@ Manage the app without editing files by hand.
 
 - **📅 Calendars**: add, edit and remove calendars in `calendars.json` (URL, name, type, category, color) with validation for missing or duplicate URLs, Google Calendar sharing links and invalid colors. The previous file is kept as `calendars.json.bak`, and keys added by hand are preserved. A URL tester checks that a link returns a valid iCal feed. Setups that still use `calendars.txt` can be converted in one click.
 - **📊 Data & display**: how all-day and multi-day events are counted, plus the default "View data by" choice and default date range used when a page opens. Stored in `app_settings.json`.
+- **🏷️ Tags**: defaults for the Tags page (see the 🏷️ Tags section above). Also stored in `app_settings.json`.
 - **💾 Cache & sync**: cached events, date range and last update per calendar; sync one or all calendars, clear one calendar's cache, and delete cache files left behind by removed calendars, individually or all at once.
 
 ---

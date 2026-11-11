@@ -571,3 +571,56 @@ def suggest_tag_groups_by_name(tags, existing=()):
             "keywords": sorted({_tag_text(t) for t in members}, key=str.casefold),
         })
     return suggestions
+
+
+# --- Tag display settings ---
+
+def _variant_key(tag):
+    """Tag name without the emoji variation selector and with single spaces,
+    so "☕ Coffee" and "☕️  Coffee" compare equal (case is kept)."""
+    return " ".join(str(tag).replace("️", "").split())
+
+
+def merge_tag_variants(occ):
+    """Relabel tags that differ only in the emoji variation selector or in
+    spacing with their most common spelling."""
+    if occ.empty:
+        return occ
+    counts = occ["tag"].value_counts()
+    canonical = {}
+    for tag in sorted(counts.index, key=lambda t: (-counts[t], t)):
+        canonical.setdefault(_variant_key(tag), tag)
+    out = occ.copy()
+    out["tag"] = out["tag"].map(lambda t: canonical[_variant_key(t)])
+    return out
+
+
+def drop_tags(occ, hidden):
+    """Occurrences without the `hidden` tags (compared like merge_tag_variants)."""
+    keys = {_variant_key(t) for t in hidden or ()}
+    if occ.empty or not keys:
+        return occ
+    return occ[~occ["tag"].map(_variant_key).isin(keys)]
+
+
+def default_chart_labels(by_count, mode="top", top_n=8, fixed=(), fill=True):
+    """Labels preselected for the charts.
+
+    - "top": the `top_n` labels with the highest count (`by_count` is sorted).
+    - "fixed": the `fixed` labels in their saved order, skipping those with no
+      entries. A group whose label got " (group)" appended still matches.
+      With `fill`, skipped ones are replaced by the top remaining labels so
+      the charts show as many lines as were picked.
+    """
+    if mode != "fixed" or not fixed:
+        return list(by_count[:top_n])
+    available = set(by_count)
+    picked = []
+    for name in fixed:
+        label = name if name in available else f"{name} (group)"
+        if label in available and label not in picked:
+            picked.append(label)
+    if fill:
+        rest = [label for label in by_count if label not in picked]
+        picked += rest[:max(0, len(fixed) - len(picked))]
+    return picked

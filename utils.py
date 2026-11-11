@@ -266,13 +266,17 @@ def load_all_events_from_cache(kind="time"):
         return None, None
 
 
-def select_month_range(df):
+def select_month_range(df, months=None):
+    """Start/end date pickers. `months` overrides the default range length
+    from the Settings page (0 = all data)."""
     min_date = df["start"].min().date()
     max_date = df["start"].max().date()
 
     now = datetime.now().date()
     # Default range length comes from the Settings page (12 months unless changed)
-    months = int(load_app_settings().get("default_range_months", 12) or 0)
+    if months is None:
+        months = load_app_settings().get("default_range_months", 12)
+    months = int(months or 0)
     range_start = (pd.Timestamp(now) - pd.DateOffset(months=months)).date() if months else min_date
     # Clamp both defaults into the data range: st.date_input raises if the
     # default lies outside [min_value, max_value], e.g. when all events are
@@ -362,6 +366,27 @@ DEFAULT_APP_SETTINGS = {
     "default_view": "calendar",
     # Initial length of the date range pickers in months (0 = all data).
     "default_range_months": 12,
+    # Tags page: preselected chart labels ("top" = the N most frequent,
+    # "fixed" = tags_chart_fixed in that order).
+    "tags_chart_mode": "top",
+    "tags_chart_top_n": 8,
+    "tags_chart_fixed": [],
+    # Replace fixed labels without entries in the range by top labels.
+    "tags_chart_fill": True,
+    # Keep the chart selection when switching view or date range.
+    "tags_keep_selection": True,
+    # Initial "Show" view: "grouped", "groups" or "tags".
+    "tags_default_view": "grouped",
+    # Initial "Count per": "Day", "Week" or "Month".
+    "tags_default_granularity": "Week",
+    # Tags left out of the Tags page entirely.
+    "tags_hidden": [],
+    # Date range of the Tags page in months (None = use default_range_months, 0 = all data).
+    "tags_range_months": None,
+    # Tag calendars preselected when there are several (empty = all).
+    "tags_default_calendars": [],
+    # Merge "☕ Coffee" and "☕️ Coffee" (emoji variation selector, spacing).
+    "tags_merge_variants": True,
 }
 
 
