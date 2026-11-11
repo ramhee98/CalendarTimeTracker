@@ -205,16 +205,25 @@ def is_tag_calendar(calendar):
     return str(calendar.get("type", "time")).lower() == "tags"
 
 
-def load_all_events(kind="time"):
-    """Sync every configured calendar and return the events of `kind`
-    ("time" or "tags"), so a Sync on any page also refreshes tag calendars."""
+def load_all_events(kind="time", sync_all=None):
+    """Sync calendars and return the events of `kind` ("time" or "tags").
+
+    By default every configured calendar is synced, so a Sync on any page
+    also refreshes the others. With the "sync_scope" setting "page", only
+    calendars of `kind` are fetched. `sync_all=True` (Home) always syncs
+    every calendar.
+    """
     try:
         calendar_data, source_type = load_calendar_urls()
         if not calendar_data:
             return None, None
 
+        if sync_all is None:
+            sync_all = load_app_settings().get("sync_scope", "all") != "page"
         all_events = []
         for calendar_info in calendar_data:
+            if calendar_info["type"] != kind and not sync_all:
+                continue
             url = calendar_info["url"]
             custom_name = calendar_info["custom_name"]
             category = calendar_info["category"]
@@ -387,6 +396,10 @@ DEFAULT_APP_SETTINGS = {
     "tags_default_calendars": [],
     # Merge "☕ Coffee" and "☕️ Coffee" (emoji variation selector, spacing).
     "tags_merge_variants": True,
+    # 🔄 Sync Calendars on a page: "all" calendars, or only those the page
+    # shows ("page": time calendars on time pages, tag calendars on Tags).
+    # Home always syncs all.
+    "sync_scope": "all",
 }
 
 

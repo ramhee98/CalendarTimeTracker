@@ -440,6 +440,27 @@ with tab_cache:
         "disappear from the source calendar."
     )
 
+    def _save_sync_scope():
+        settings = load_app_settings()
+        settings["sync_scope"] = st.session_state.sync_scope
+        save_app_settings(settings)
+
+    scopes = {"all": "All calendars", "page": "Only the calendars the page shows"}
+    current_scope = load_app_settings().get("sync_scope", "all")
+    st.radio(
+        "🔄 Sync Calendars on a page fetches",
+        list(scopes),
+        index=1 if current_scope == "page" else 0,
+        format_func=scopes.get,
+        horizontal=True,
+        key="sync_scope",
+        on_change=_save_sync_scope,
+        help="Only the calendars the page shows: time calendars on Search, Compare Periods, Trends and "
+             "AI Insights, tag calendars on the Tags page. Faster, but the other calendars stay as cached until "
+             "you sync them, sync on Home, or the automatic daily sync runs. Home always syncs all calendars. "
+             "Saved immediately.",
+    )
+
     rows, tag_hints = [], []
     for c in calendars:
         path = get_cache_file_path(c["url"])

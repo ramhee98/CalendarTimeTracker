@@ -644,14 +644,14 @@ force_refresh = st.session_state.get("force_refresh", False)
 if force_refresh:
     st.session_state.force_refresh = False  # Reset flag
     with st.spinner("Fetching latest calendar data from URLs..."):
-        all_events, source_type = load_all_events()
+        all_events, source_type = load_all_events(sync_all=True)
 else:
     with st.spinner("Loading calendar data from cache..."):
         all_events, source_type = load_all_events_from_cache()
         if not all_events:
             # No cache exists yet, fetch from URLs
             with st.spinner("No cache found, fetching from URLs..."):
-                all_events, source_type = load_all_events()
+                all_events, source_type = load_all_events(sync_all=True)
 
 # Mark main app as loaded
 st.session_state.main_app_loaded = True
