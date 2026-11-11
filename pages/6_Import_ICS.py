@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from ics import Calendar
-from calendar_store import update_event_store, expand_calendar_events
+from calendar_store import update_event_store, expand_calendar_events, decode_ics_response
 from utils import load_calendar_urls
 import requests
 import os
@@ -20,7 +20,7 @@ def get_wr_calname(url):
         else:
             response = requests.get(url, timeout=5)
             response.raise_for_status()
-            content = response.text
+            content = decode_ics_response(response)
 
         for line in content.splitlines():
             if line.startswith("X-WR-CALNAME:"):
@@ -54,7 +54,7 @@ for calendar in https_calendars:
             else:
                 response = requests.get(url, timeout=5)
                 response.raise_for_status()
-                content = response.text
+                content = decode_ics_response(response)
 
             # Attempt to extract calendar name from X-WR-CALNAME
             for line in content.splitlines():

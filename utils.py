@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import tzlocal
 from ics import Calendar
 import calendar as cal_module
-from calendar_store import update_event_store, load_cached_events, expand_calendar_events
+from calendar_store import update_event_store, load_cached_events, expand_calendar_events, decode_ics_response
 
 
 def get_version():
@@ -83,7 +83,7 @@ def fetch_and_parse_ics(url, calendar_name):
         if response.status_code != 200:
             # Server error: fall back to the cached events for this calendar.
             return load_cached_events(url).to_dict("records")
-        content = response.text
+        content = decode_ics_response(response)
 
     ensure_ics_content(content)
 

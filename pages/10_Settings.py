@@ -8,7 +8,7 @@ import requests
 import streamlit as st
 
 from analysis import is_all_day
-from calendar_store import get_cache_file_path, hash_url
+from calendar_store import decode_ics_response, get_cache_file_path, hash_url
 from utils import (
     CALENDARS_JSON, ensure_ics_content, fetch_and_parse_ics, load_app_settings,
     load_calendar_urls, read_calendars_config, save_app_settings, write_calendars_config,
@@ -223,7 +223,7 @@ def render_calendars_tab():
                 else:
                     response = requests.get(test_url, timeout=15)
                     response.raise_for_status()
-                    content = response.text
+                    content = decode_ics_response(response)
                 ensure_ics_content(content)
                 name = next((line.split(":", 1)[1].strip() for line in content.splitlines()
                              if line.startswith("X-WR-CALNAME:")), None)

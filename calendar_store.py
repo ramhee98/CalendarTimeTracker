@@ -178,13 +178,52 @@ def hash_url(url):
 def get_cache_file_path(url):
     return f"data/{hash_url(url)}.csv"
 
+def decode_ics_response(response):
+    """Text of a fetched .ics feed.
+
+    iCalendar is UTF-8 by default (RFC 5545), but `requests` falls back to
+    ISO-8859-1 for a text/* response without a charset, which turns "☕"
+    into "â\\x98\\x95". Use the declared charset when there is one,
+    otherwise UTF-8.
+    """
+    if "charset" in (response.headers.get("Content-Type") or "").lower():
+        return response.text
+    try:
+        return response.content.decode("utf-8")
+    except UnicodeDecodeError:
+        return response.text
+
+
+# Two-character sequences that only appear when UTF-8 was decoded as Latin-1:
+# a UTF-8 lead byte (Ã/Â for 2-byte, â/ã/ä... for 3-byte, ð for 4-byte
+# characters such as emojis) followed by a continuation byte (0x80-0xBF).
+_MOJIBAKE = re.compile("[Â-ô][\u0080-¿]")
+
+
+def repair_mojibake(text):
+    """Undo UTF-8 text that was decoded as Latin-1 ("â\\x98\\x95 Coffee" ->
+    "☕ Coffee"). Text that isn't garbled is returned unchanged."""
+    if not isinstance(text, str) or not _MOJIBAKE.search(text):
+        return text
+    try:
+        return text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+
+
 def load_cached_events(url):
     path = get_cache_file_path(url)
     if os.path.exists(path) and os.path.getsize(path) > 0:
         try:
-            return pd.read_csv(path, parse_dates=["start", "end"])
+            df = pd.read_csv(path, parse_dates=["start", "end"])
         except pd.errors.EmptyDataError:
             return pd.DataFrame()  # Recover gracefully if file is corrupt or empty
+        # Older caches of feeds served without a charset hold garbled names;
+        # repair them on read (they're written back fixed on the next sync).
+        for col in ("event_name", "calendar"):
+            if col in df and df[col].dtype == object:
+                df[col] = df[col].map(repair_mojibake)
+        return df
     return pd.DataFrame()
 
 def save_events_to_cache(url, df):

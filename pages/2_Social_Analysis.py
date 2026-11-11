@@ -8,7 +8,7 @@ import json
 import os
 import requests
 import calendar
-from calendar_store import load_cached_events, update_event_store, expand_calendar_events
+from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response
 from utils import select_month_range, normalize_time, ensure_ics_content
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
@@ -118,7 +118,7 @@ def fetch_calendar_events(url, calendar_name):
             if response.status_code != 200:
                 # Server error: fall back to the cached events.
                 return load_events_from_cache(url, calendar_name)
-            content = response.text
+            content = decode_ics_response(response)
 
         ensure_ics_content(content)
 
