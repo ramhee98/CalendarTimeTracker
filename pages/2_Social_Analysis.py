@@ -82,7 +82,9 @@ def load_calendar_urls(calendars_json_file="calendars.json"):
     if os.path.exists(calendars_json_file):
         with open(calendars_json_file, 'r') as file:
             calendar_data = json.load(file)
-        return calendar_data.get('calendars', [])
+        # Tag calendars (type "tags", e.g. Oura tags) hold markers, not meetings
+        return [c for c in calendar_data.get('calendars', [])
+                if str(c.get("type", "time")).lower() != "tags"]
     return []
 
 def load_events_from_cache(url, calendar_name):

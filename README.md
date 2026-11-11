@@ -201,7 +201,7 @@ Upload `.ics` files and assign them to specific calendars configured via `calend
 
 Manage the app without editing files by hand.
 
-- **📅 Calendars**: add, edit and remove calendars in `calendars.json` (URL, name, category, color) with validation for missing or duplicate URLs, Google Calendar sharing links and invalid colors. The previous file is kept as `calendars.json.bak`, and keys added by hand are preserved. A URL tester checks that a link returns a valid iCal feed. Setups that still use `calendars.txt` can be converted in one click.
+- **📅 Calendars**: add, edit and remove calendars in `calendars.json` (URL, name, type, category, color) with validation for missing or duplicate URLs, Google Calendar sharing links and invalid colors. The previous file is kept as `calendars.json.bak`, and keys added by hand are preserved. A URL tester checks that a link returns a valid iCal feed. Setups that still use `calendars.txt` can be converted in one click.
 - **📊 Data & display**: how all-day and multi-day events are counted, plus the default "View data by" choice and default date range used when a page opens. Stored in `app_settings.json`.
 - **💾 Cache & sync**: cached events, date range and last update per calendar; sync one or all calendars, clear one calendar's cache, and delete cache files left behind by removed calendars, individually or all at once.
 
@@ -250,6 +250,20 @@ Supports rich metadata like category assignment and custom calendar colors.
 If `calendars.json` is present, it will be used automatically and enables category-based grouping.
 
 Calendar URLs must point at the iCal feed itself - the address ending in `.ics` (in Google Calendar: "Secret address in iCal format"), not the `calendar.google.com/calendar/u/0?cid=...` sharing link, which serves a web page instead of calendar data.
+
+### Tag calendars
+
+Some calendars contain markers rather than time blocks, for example [oura-tags-ical](https://github.com/ramhee98/oura-tags-ical), which turns Oura tags into events such as ☕ Coffee or 🍺 Beer. Counted as time, every all-day tag would add 24 hours. Mark such calendars with `"type": "tags"` (or set **Type** to `tags` on the Settings page):
+
+```json
+{
+    "url": "https://example.com/oura-tags.ics",
+    "custom_name": "Oura Tags",
+    "type": "tags"
+}
+```
+
+Tag calendars are synced like any other calendar, but are left out of all hour totals, charts, goals and Social Analysis. Category and color are ignored. The Settings page points out calendars that look like tag calendars (almost all events all-day or without duration).
 
 ### AI Configuration: `ai_config.json`
 

@@ -5,15 +5,14 @@ from datetime import datetime, date, timedelta, timezone
 import altair as alt
 import os
 import shutil
-from calendar_store import load_cached_events
 import calendar
 import json
-import colorsys
 import tzlocal
 import threading
 import time
 from utils import (
     default_view_index,
+    load_calendar_urls, load_all_events, load_all_events_from_cache, parse_ics_from_url,
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
     build_events_df, load_goals, render_goal_progress,
 )
@@ -74,14 +73,6 @@ def is_update_available(current, latest):
     except Exception:
         return False
 
-def random_distinct_color(index, total_colors):
-    hue = (index / total_colors)  # Distribute hues evenly (0 to 1)
-    saturation = 0.7  # Maintain vivid colors
-    lightness = 0.5  # Keep the colors neither too dark nor too light
-    r, g, b = colorsys.hls_to_rgb(hue, lightness, saturation)
-    color = "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
-    return color
-
 def _fetch_and_parse_ics(url, calendar_name):
     """Core function to fetch and parse ICS - no Streamlit dependencies."""
     try:
@@ -89,136 +80,6 @@ def _fetch_and_parse_ics(url, calendar_name):
     except Exception as e:
         print(f"Error loading {url}: {e}")
         return []
-
-@st.cache_data(ttl=86400, show_spinner=False)  # Cache for 24 hours, spinner handled manually
-def parse_ics_from_url(url, calendar_name):
-    """Streamlit-cached wrapper for fetching and parsing ICS."""
-    return _fetch_and_parse_ics(url, calendar_name)
-
-def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars.txt"):
-    try:
-        category_colors = {}  # To keep track of category colors
-        calendar_colors = {}  # To store colors from JSON for calendars
-
-        # Try loading the JSON calendar file first
-        if os.path.exists(calendars_json_file):
-            filetype = calendars_json_file
-            with open(calendars_json_file, 'r') as file:
-                calendar_data = json.load(file)
-            calendars = []
-            distinct_color_index = 0
-            total_calendars = len(calendar_data['calendars'])
-
-            for index, calendar in enumerate(calendar_data['calendars']):
-                url = calendar["url"]
-                custom_name = calendar.get("custom_name", "") or "Unnamed"
-                category = calendar.get("category", custom_name) # Default category to custom_name if not provided
-                color_from_json = calendar.get("color")
-
-                # Store color from JSON if available, or generate if missing
-                if color_from_json:
-                    calendar_colors[custom_name] = color_from_json
-                    color = color_from_json
-                else:
-                    color = random_distinct_color(distinct_color_index, total_calendars)
-                    calendar_colors[custom_name] = color
-                    distinct_color_index += 1
-
-                # Assign color to category if not already assigned
-                if category not in category_colors:
-                    # If a specific color is defined for a calendar, use that for its category (if category is same as custom_name)
-                    if category == custom_name and color_from_json:
-                        category_colors[category] = color_from_json
-                    else:
-                        category_colors[category] = random_distinct_color(distinct_color_index, total_calendars)
-                        distinct_color_index += 1
-
-                calendars.append({
-                    "url": url,
-                    "custom_name": custom_name,
-                    "category": category,
-                    "color": color
-                })
-            return calendars, "json"
-
-        # If the JSON config is not found, fall back to reading from the txt file
-        elif os.path.exists(txt_file):
-            filetype = txt_file
-            calendars = []
-            with open(txt_file, "r", encoding="utf-8") as f:
-                total_colors = sum(1 for line in f if line.strip() and not line.startswith("#"))  # Count total calendars
-                f.seek(0)  # Reset file pointer to the beginning
-                for index, line in enumerate(f):
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        parts = line.split("#")
-                        url = parts[0].strip()
-                        custom_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Unnamed"
-                        category = custom_name  # Use custom_name as category for .txt
-
-                        # Assign color to category if not already assigned
-                        if category not in category_colors:
-                            category_colors[category] = random_distinct_color(index, total_colors)
-
-                        calendars.append({"url": url, "custom_name": custom_name, "category": category, "color": category_colors[category]})
-            return calendars, "txt"
-
-        return None, None
-
-    except Exception as e:
-        st.error(f"An error occurred while loading calendar config {filetype}: {e}")
-        return None, None
-
-def load_all_events_from_cache():
-    """Load events from local CSV cache only (instant, no network requests)."""
-    try:
-        calendar_data, source_type = load_calendar_urls()
-        if not calendar_data:
-            return None, None
-
-        all_events = []
-        for calendar_info in calendar_data:
-            url = calendar_info["url"]
-            custom_name = calendar_info["custom_name"]
-            category = calendar_info["category"]
-            color = calendar_info["color"]
-            
-            # Load from local CSV cache (no URL fetching)
-            cached_df = load_cached_events(url)
-            if not cached_df.empty:
-                cached_df["category"] = category
-                cached_df["calendar_name"] = custom_name
-                cached_df["color"] = color
-                all_events.extend(cached_df.to_dict("records"))
-
-        return all_events if all_events else None, source_type
-    except Exception as e:
-        st.error(f"An error occurred while loading cached events: {e}")
-        return None, None
-
-def load_all_events():
-    try:
-        calendar_data, source_type = load_calendar_urls()
-        if not calendar_data:
-            return None, None
-
-        all_events = []
-        for calendar_info in calendar_data:
-            url = calendar_info["url"]
-            custom_name = calendar_info["custom_name"]
-            category = calendar_info["category"] # Ensure category is always taken from calendar_data
-            color = calendar_info["color"]
-            events = parse_ics_from_url(url, custom_name)
-            for event in events:
-                event["category"] = category
-                event["calendar_name"] = custom_name
-                event["color"] = color  # Add color to each event
-            all_events.extend(events)
-
-        return all_events, source_type
-    except Exception as e:
-        st.error(f"An error occurred while loading events: {e}")
-        return None, None
 
 # --- Background auto-refresh (runs 5 minutes before 24-hour TTL expires) ---
 _CACHE_TTL = 86400  # 24 hours in seconds

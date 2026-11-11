@@ -134,11 +134,18 @@ def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars
                 calendar_data = json.load(file)
             calendars = []
             distinct_color_index = 0
-            total_calendars = len(calendar_data['calendars'])
+            # Tag calendars (type "tags") hold markers like "☕ Coffee", not
+            # time blocks. They take no part in colors/categories so adding
+            # one doesn't shift the colors of the time calendars.
+            total_calendars = max(sum(1 for c in calendar_data['calendars'] if not is_tag_calendar(c)), 1)
 
             for index, calendar in enumerate(calendar_data['calendars']):
                 url = calendar["url"]
                 custom_name = calendar.get("custom_name", "") or "Unnamed"
+                if is_tag_calendar(calendar):
+                    calendars.append({"url": url, "custom_name": custom_name, "category": None,
+                                      "color": None, "type": "tags"})
+                    continue
                 category = calendar.get("category", custom_name)
                 color_from_json = calendar.get("color")
 
@@ -161,7 +168,8 @@ def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars
                     "url": url,
                     "custom_name": custom_name,
                     "category": category,
-                    "color": color
+                    "color": color,
+                    "type": "time",
                 })
             return calendars, "json"
 
@@ -182,7 +190,7 @@ def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars
                         if category not in category_colors:
                             category_colors[category] = random_distinct_color(index, total_colors)
 
-                        calendars.append({"url": url, "custom_name": custom_name, "category": category, "color": category_colors[category]})
+                        calendars.append({"url": url, "custom_name": custom_name, "category": category, "color": category_colors[category], "type": "time"})
             return calendars, "txt"
 
         return None, None
@@ -192,7 +200,14 @@ def load_calendar_urls(calendars_json_file="calendars.json", txt_file="calendars
         return None, None
 
 
-def load_all_events():
+def is_tag_calendar(calendar):
+    """True for calendars configured with "type": "tags" in calendars.json."""
+    return str(calendar.get("type", "time")).lower() == "tags"
+
+
+def load_all_events(kind="time"):
+    """Sync every configured calendar and return the events of `kind`
+    ("time" or "tags"), so a Sync on any page also refreshes tag calendars."""
     try:
         calendar_data, source_type = load_calendar_urls()
         if not calendar_data:
@@ -205,6 +220,9 @@ def load_all_events():
             category = calendar_info["category"]
             color = calendar_info["color"]
             events = parse_ics_from_url(url, custom_name)
+            if calendar_info["type"] != kind:
+                continue
+            events = [dict(e) for e in events]  # don't mutate the st.cache_data result
             for event in events:
                 event["category"] = category
                 event["calendar_name"] = custom_name
@@ -217,8 +235,9 @@ def load_all_events():
         return None, None
 
 
-def load_all_events_from_cache():
-    """Load events from local CSV cache only (instant, no network requests)."""
+def load_all_events_from_cache(kind="time"):
+    """Load events of `kind` ("time" or "tags") from the local CSV cache only
+    (instant, no network requests)."""
     try:
         calendar_data, source_type = load_calendar_urls()
         if not calendar_data:
@@ -226,6 +245,8 @@ def load_all_events_from_cache():
 
         all_events = []
         for calendar_info in calendar_data:
+            if calendar_info["type"] != kind:
+                continue
             url = calendar_info["url"]
             custom_name = calendar_info["custom_name"]
             category = calendar_info["category"]
@@ -449,10 +470,11 @@ def save_goals(goals):
 
 # --- Shared page helpers ---
 
-def load_events_for_page(page_key):
+def load_events_for_page(page_key, kind="time", stop_if_empty=True):
     """Quick Load / Sync buttons plus cache-first loading, as on every page.
 
-    Stops the page when no events are available.
+    `kind` selects time calendars or tag calendars. Stops the page when no
+    events are available (unless `stop_if_empty` is False).
     """
     flag = f"force_refresh_{page_key}"
     _, col2, col3 = st.columns([2, 1, 1])
@@ -469,15 +491,15 @@ def load_events_for_page(page_key):
     if st.session_state.get(flag, False):
         st.session_state[flag] = False
         with st.spinner("Fetching latest calendar data from URLs..."):
-            all_events, source_type = load_all_events()
+            all_events, source_type = load_all_events(kind)
     else:
         with st.spinner("Loading calendar data from cache..."):
-            all_events, source_type = load_all_events_from_cache()
+            all_events, source_type = load_all_events_from_cache(kind)
             if not all_events:
                 with st.spinner("No cache found, fetching from URLs..."):
-                    all_events, source_type = load_all_events()
+                    all_events, source_type = load_all_events(kind)
 
-    if not all_events:
+    if not all_events and stop_if_empty:
         st.warning("No events available.")
         st.stop()
     return all_events, source_type

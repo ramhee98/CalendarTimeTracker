@@ -7,6 +7,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from analysis import is_all_day
 from calendar_store import get_cache_file_path, hash_url
 from utils import (
     CALENDARS_JSON, ensure_ics_content, fetch_and_parse_ics, load_app_settings,
@@ -27,7 +28,8 @@ def flash(msg):
 
 
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
-EDITED_KEYS = ("url", "custom_name", "category", "color")
+EDITED_KEYS = ("url", "custom_name", "type", "category", "color")
+CALENDAR_TYPES = ("time", "tags")
 
 
 def is_sharing_link(url):
@@ -42,6 +44,23 @@ def format_age(ts):
     if seconds < 86400:
         return f"{seconds / 3600:.0f} h ago"
     return f"{seconds / 86400:.0f} days ago"
+
+
+def looks_like_tags(path, threshold=0.9, min_events=5):
+    """True if almost all cached events are zero-length or all-day, as in a
+    tag calendar (e.g. Oura tags) rather than a calendar of time blocks."""
+    try:
+        df = pd.read_csv(path, usecols=["start", "end"])
+    except Exception:
+        return False
+    start = pd.to_datetime(df["start"], errors="coerce", utc=True)
+    end = pd.to_datetime(df["end"], errors="coerce", utc=True)
+    valid = start.notna() & end.notna()
+    if valid.sum() < min_events:
+        return False
+    start, end = start[valid], end[valid]
+    marker = (start == end) | is_all_day(start, end)
+    return marker.mean() >= threshold
 
 
 def cache_info(path):
@@ -97,12 +116,16 @@ def render_calendars_tab():
     st.markdown(
         "One row per calendar. **URL** must be the iCal feed itself (in Google Calendar: "
         "*Secret address in iCal format*), or `file:///path/to/calendar.ics`. "
-        "Leave **Category** empty to use the name, and **Color** empty for an automatic color."
+        "Leave **Category** empty to use the name, and **Color** empty for an automatic color. "
+        "Set **Type** to `tags` for calendars of markers rather than time blocks, such as "
+        "[Oura tags](https://github.com/ramhee98/oura-tags-ical) (☕ Coffee, 🍺 Beer): they're counted "
+        "on the Tags page and left out of all hour totals."
     )
     editor_df = pd.DataFrame(
         [{k: str(c.get(k, "") or "") for k in EDITED_KEYS} for c in config["calendars"]],
         columns=list(EDITED_KEYS),
     ).astype("object")
+    editor_df["type"] = ["tags" if str(t).lower() == "tags" else "time" for t in editor_df["type"]]
     edited = st.data_editor(
         editor_df,
         num_rows="dynamic",
@@ -112,6 +135,11 @@ def render_calendars_tab():
         column_config={
             "url": st.column_config.TextColumn("URL", width="large", required=True),
             "custom_name": st.column_config.TextColumn("Name"),
+            "type": st.column_config.SelectboxColumn(
+                "Type", options=list(CALENDAR_TYPES), default="time", required=True,
+                help="time = events with durations, tags = markers counted on the Tags page "
+                     "(category and color are ignored)",
+            ),
             "category": st.column_config.TextColumn("Category"),
             "color": st.column_config.TextColumn("Color", help="Hex color like #33FF57", validate=r"^(#[0-9a-fA-F]{6})?$"),
         },
@@ -125,6 +153,7 @@ def render_calendars_tab():
             f"<span style='display:inline-block;width:12px;height:12px;border-radius:2px;"
             f"background:{c['color']};vertical-align:middle'></span> {c['custom_name']}</span>"
             for c in configured
+            if c.get("type") != "tags"
         )
         st.markdown(swatches, unsafe_allow_html=True)
 
@@ -134,7 +163,7 @@ def render_calendars_tab():
         seen_urls, seen_names = set(), {}
         for i, row in edited.reset_index(drop=True).iterrows():
             values = {k: ("" if pd.isna(row[k]) else str(row[k]).strip()) for k in EDITED_KEYS}
-            if not any(values.values()):
+            if not any(v for k, v in values.items() if k != "type"):
                 continue  # empty row
             url, name, color = values["url"], values["custom_name"], values["color"]
             label = f"Row {i + 1}" + (f" ({name})" if name else "")
@@ -160,6 +189,8 @@ def render_calendars_tab():
             # Keep keys this editor doesn't know about (e.g. added by hand)
             entry = {k: v for k, v in originals.get(url, {}).items() if k not in EDITED_KEYS}
             entry = {"url": url, **{k: values[k] for k in ("custom_name", "category", "color") if values[k]}, **entry}
+            if values["type"] == "tags":
+                entry["type"] = "tags"  # omitted for normal time calendars
             new_calendars.append(entry)
 
         if problems:
@@ -269,12 +300,22 @@ with tab_cache:
         "disappear from the source calendar."
     )
 
-    rows = []
+    rows, tag_hints = [], []
     for c in calendars:
-        info = cache_info(get_cache_file_path(c["url"]))
-        rows.append({"Calendar": c["custom_name"], "Category": c["category"], **info})
+        path = get_cache_file_path(c["url"])
+        info = cache_info(path)
+        rows.append({"Calendar": c["custom_name"], "Type": c.get("type", "time"),
+                     "Category": c["category"] or "—", **info})
+        if c.get("type") != "tags" and looks_like_tags(path):
+            tag_hints.append(c["custom_name"])
     if rows:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        for name in tag_hints:
+            st.info(
+                f"**{name}** looks like a tag calendar: almost all of its events are all-day or have no "
+                "duration, so they add whole days or nothing to your totals. If it holds markers like "
+                "☕ Coffee rather than time blocks, set its Type to `tags` on the Calendars tab."
+            )
     else:
         st.info("No calendars configured.")
 
