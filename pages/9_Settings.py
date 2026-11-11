@@ -347,10 +347,31 @@ with tab_cache:
             f"{len(orphans)} cache file(s) belong to calendars that were removed or whose URL changed. "
             "Re-adding the same URL would reuse its file, including events older than 30 days."
         )
-        st.dataframe(pd.DataFrame(orphan_rows), use_container_width=True, hide_index=True)
-        confirm = st.checkbox(f"Yes, delete these {len(orphans)} file(s)")
-        if st.button("Delete unused cache files", disabled=not confirm):
-            for p in orphans:
-                os.remove(p)
-            flash(f"Deleted {len(orphans)} unused cache file(s).")
+        select_all = st.checkbox("Select all", key="orphans_select_all")
+        orphan_df = pd.DataFrame(orphan_rows)
+        orphan_df.insert(0, "Delete", select_all)
+        edited_orphans = st.data_editor(
+            orphan_df,
+            use_container_width=True,
+            hide_index=True,
+            # Re-key on "Select all" so toggling it resets the individual ticks
+            key=f"orphans_editor_{select_all}",
+            disabled=[c for c in orphan_df.columns if c != "Delete"],
+            column_config={"Delete": st.column_config.CheckboxColumn("Delete", help="Tick the files to delete")},
+        )
+        to_delete = edited_orphans.loc[edited_orphans["Delete"].fillna(False).astype(bool), "File"].tolist()
+        if to_delete:
+            confirm = st.checkbox(
+                f"Yes, delete {len(to_delete)} selected file(s): {', '.join(to_delete)}",
+                key="orphans_confirm",
+            )
+        else:
+            confirm = False
+            st.caption("Tick the files you want to delete.")
+        if st.button(f"Delete selected ({len(to_delete)})", disabled=not confirm):
+            for name in to_delete:
+                path = os.path.join("data", name)
+                if path in orphans and os.path.exists(path):
+                    os.remove(path)
+            flash(f"Deleted {len(to_delete)} unused cache file(s): {', '.join(to_delete)}.")
             st.rerun()
