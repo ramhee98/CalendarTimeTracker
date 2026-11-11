@@ -578,7 +578,8 @@ def render_goal_progress(goal, result):
     st.progress(
         fraction,
         text=(
-            f"**{goal['name']}** ({goal['type']}) · {result['done']:.1f}h done, "
+            f"{'🗂️' if goal['type'] == 'category' else '📅'} **{goal['name']}** ({goal['type']}) · "
+            f"{result['done']:.1f}h done, "
             f"{result['booked']:.1f}h booked of {goal_target_text(goal)} this {result['period']}"
             f" — {result['status_label']}"
         ),

@@ -129,7 +129,7 @@ Set time targets and see whether you're living the week you intended.
 - **Done vs booked**: hours already passed this period, plus events still scheduled, with a status (reached, on track, behind, over budget)
 - **History**: bar chart of past periods (met / missed) with the target lines, current streak and hit rate
 - **Home page**: progress bars for every goal at the top
-- **Editable in the app**: goals are stored in `goals.json`
+- **Editable in the app**: pick from one list where every entry shows whether it is a 📅 calendar or a 🗂️ category, so goals for a calendar and a category with the same name can't be mixed up. Goals are stored in `goals.json`
 
 ---
 

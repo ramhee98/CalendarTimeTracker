@@ -22,7 +22,22 @@ with st.spinner("Processing calendar data..."):
 goals = load_goals()
 calendars = sorted(df["calendar"].dropna().unique().tolist())
 categories = sorted(df["category"].dropna().unique().tolist()) if source_type == "json" else []
-type_options = ["calendar", "category"] if source_type == "json" else ["calendar"]
+
+# Calendars and categories can share a name, so the picker shows the type
+# with every entry and the type is derived from the choice.
+TYPE_ICONS = {"calendar": "📅 Calendar", "category": "🗂️ Category"}
+
+
+def target_label(goal_type, name):
+    return f"{TYPE_ICONS.get(goal_type, goal_type)} · {name}"
+
+
+target_of = {target_label("calendar", c): ("calendar", c) for c in calendars}
+target_of.update({target_label("category", c): ("category", c) for c in categories})
+# Keep saved goals whose calendar/category no longer exists visible, so
+# saving reports them instead of silently dropping them.
+for g in goals:
+    target_of.setdefault(target_label(g["type"], g["name"]), (g["type"], g["name"]))
 
 # --- Edit goals ---
 with st.expander("✏️ Edit goals", expanded=not goals):
@@ -30,9 +45,10 @@ with st.expander("✏️ Edit goals", expanded=not goals):
         "**Min** = spend at least this many hours, **Max** = spend at most. "
         "Fill one or both. Add rows at the bottom, delete by selecting a row and pressing Delete."
     )
-    editor_df = pd.DataFrame(goals, columns=["type", "name", "period", "min", "max"]).astype(
-        {"type": "object", "name": "object", "period": "object", "min": "float", "max": "float"}
-    )
+    editor_df = pd.DataFrame(
+        [{"target": target_label(g["type"], g["name"]), **{k: g[k] for k in ("period", "min", "max")}} for g in goals],
+        columns=["target", "period", "min", "max"],
+    ).astype({"target": "object", "period": "object", "min": "float", "max": "float"})
     edited = st.data_editor(
         editor_df,
         num_rows="dynamic",
@@ -40,9 +56,9 @@ with st.expander("✏️ Edit goals", expanded=not goals):
         use_container_width=True,
         key="goals_editor",
         column_config={
-            "type": st.column_config.SelectboxColumn("Type", options=type_options, required=True, default="calendar"),
-            "name": st.column_config.SelectboxColumn(
-                "Calendar / Category", options=sorted(set(calendars) | set(categories)), required=True
+            "target": st.column_config.SelectboxColumn(
+                "Calendar / Category", options=list(target_of), required=True, width="large",
+                help="📅 = a single calendar, 🗂️ = a category (all calendars with that category)",
             ),
             "period": st.column_config.SelectboxColumn("Per", options=["week", "month"], required=True, default="week"),
             "min": st.column_config.NumberColumn("Min (h)", min_value=0.0, step=0.5),
@@ -53,11 +69,12 @@ with st.expander("✏️ Edit goals", expanded=not goals):
     if st.button("💾 Save goals"):
         new_goals, problems = [], []
         for i, row in edited.reset_index(drop=True).iterrows():
-            if pd.isna(row["name"]) or not str(row["name"]).strip():
+            if pd.isna(row["target"]) or row["target"] not in target_of:
                 continue
+            goal_type, name = target_of[row["target"]]
             goal = {
-                "type": row["type"] if isinstance(row["type"], str) else "calendar",
-                "name": str(row["name"]).strip(),
+                "type": goal_type,
+                "name": name,
                 "period": row["period"] if isinstance(row["period"], str) else "week",
                 "min": None if pd.isna(row["min"]) else float(row["min"]),
                 "max": None if pd.isna(row["max"]) else float(row["max"]),
@@ -95,7 +112,7 @@ for goal, r in results:
     render_goal_progress(goal, r)
 
 overview = pd.DataFrame([{
-    "Goal": f"{g['name']} ({g['type']})",
+    "Goal": target_label(g["type"], g["name"]),
     "Target": f"{goal_target_text(g)} / {g['period']}",
     "Done": round(r["done"], 1),
     "Booked": round(r["booked"], 1),
@@ -111,7 +128,7 @@ st.caption("Done = hours already passed this period, Booked = done plus events s
 st.subheader("History")
 for goal, r in results:
     period = r["period"]
-    st.markdown(f"#### {goal['name']} · {goal_target_text(goal)} per {period}")
+    st.markdown(f"#### {target_label(goal['type'], goal['name'])} · {goal_target_text(goal)} per {period}")
     c1, c2, c3 = st.columns(3)
     c1.metric("Current streak", f"{r['streak']} {period}{'s' if r['streak'] != 1 else ''}")
     c2.metric("Hit rate", f"{r['met_count'] / r['history_count'] * 100:.0f}%" if r["history_count"] else "—",
