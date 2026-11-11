@@ -52,16 +52,6 @@ def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now
     if not rrule_line:
         return [(start_utc, end_utc, uid)]
 
-    # Collect EXDATE exclusions (matched by calendar date, best effort).
-    exdates = set()
-    for c in getattr(event, "extra", []):
-        if c.name == "EXDATE":
-            for part in c.value.split(","):
-                try:
-                    exdates.add(dtparser.parse(part).date())
-                except Exception:
-                    pass
-
     if now is None:
         now = datetime.now(timezone.utc)
     horizon = now + timedelta(days=horizon_days)
@@ -72,6 +62,21 @@ def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now
     # day, a floating DATE-TIME is treated as UTC (best effort).
     rrule_line = re.sub(r"UNTIL=(\d{8})(?=;|$)", r"UNTIL=\1T235959Z", rrule_line)
     rrule_line = re.sub(r"UNTIL=(\d{8}T\d{6})(?=;|$)", r"UNTIL=\1Z", rrule_line)
+
+    # Collect EXDATE exclusions, matched by calendar date in the event's own
+    # timezone (honouring the EXDATE's TZID) so exclusions near midnight
+    # don't miss or hit the wrong occurrence.
+    exdates = set()
+    for c in getattr(event, "extra", []):
+        if c.name == "EXDATE":
+            for part in c.value.split(","):
+                try:
+                    ex = parse_ical_value(part, c.params, dtstart.tzinfo)
+                    if isinstance(ex, datetime):
+                        ex = ex.astimezone(dtstart.tzinfo).date()
+                    exdates.add(ex)
+                except Exception:
+                    pass
 
     try:
         rule = rrulestr(rrule_line, dtstart=dtstart)
@@ -84,7 +89,7 @@ def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now
         occ_start = occ_local.astimezone(timezone.utc)
         if occ_start > horizon or len(occurrences) >= max_occurrences:
             break
-        if occ_start.date() in exdates:
+        if occ_local.date() in exdates:
             continue
         if overridden and occ_start.date().isoformat() in overridden:
             continue  # Replaced by a RECURRENCE-ID override event
