@@ -16,7 +16,10 @@ from utils import (
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
     build_events_df, load_goals, render_goal_progress,
 )
-from analysis import clip_to_range, long_event_mask, find_overlaps, union_hours, evaluate_goal
+from analysis import (
+    clip_to_range, long_event_mask, find_overlaps, union_hours, evaluate_goal,
+    booked_weeks, period_label,
+)
 
 # Streamlit UI
 st.set_page_config(page_title="CalendarTimeTracker", layout="wide")
@@ -547,6 +550,57 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
 
     st.altair_chart(chart, use_container_width=True)
 
+def show_upcoming_weeks(full_df, group_mode, today, weeks_ahead=4):
+    """Hours already booked this week and the next weeks vs a typical week."""
+    future, summary, typical_total, n_weeks = booked_weeks(full_df, "group", today, weeks_ahead)
+    if future.empty or summary["booked"].sum() == 0:
+        return
+
+    labels = {
+        ws: ("This week" if i == 0 else "Next week" if i == 1 else f"{period_label('week', ws)} ({ws:%d %b})")
+        for i, ws in enumerate(summary.index)
+    }
+    busy = [labels[ws] for ws in summary.index[summary["busy"]]]
+    title = "🔮 Upcoming Weeks"
+    if busy:
+        title += f" — {busy[0].lower() if busy[0] in ('This week', 'Next week') else busy[0]} looks busy"
+
+    with st.expander(title, expanded=bool(busy)):
+        st.caption(
+            "Hours already in your calendars. Future weeks are usually incomplete, so read this as "
+            f"\"booked so far\", not a prediction. Typical week = average of the last {n_weeks} complete weeks."
+        )
+        cols = st.columns(len(summary))
+        for col, (ws, row) in zip(cols, summary.iterrows()):
+            delta = f"{row['ratio'] * 100:.0f}% of typical" if typical_total else None
+            col.metric(
+                labels[ws], f"{row['booked']:.1f}h", delta=delta,
+                delta_color="inverse" if row["busy"] else "off",
+            )
+
+        long = future.reset_index().melt(id_vars="period_start", var_name="group", value_name="hours")
+        long = long[long["hours"] > 0]
+        long["week"] = long["period_start"].map(labels)
+        color_mapping = full_df.groupby("group")["color"].first().to_dict()
+        bars = alt.Chart(long).mark_bar().encode(
+            x=alt.X("week:N", title="", sort=[labels[ws] for ws in summary.index], axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("hours:Q", title="Hours booked"),
+            color=alt.Color(
+                "group:N", title=group_mode.title(),
+                scale=alt.Scale(domain=list(color_mapping.keys()), range=list(color_mapping.values())),
+            ),
+            tooltip=["week:N", alt.Tooltip("group:N", title=group_mode.title()), alt.Tooltip("hours:Q", format=".1f")],
+        )
+        layers = [bars]
+        if typical_total:
+            layers.append(
+                alt.Chart(pd.DataFrame({"y": [typical_total]}))
+                .mark_rule(strokeDash=[4, 4], color="#555")
+                .encode(y="y:Q", tooltip=[alt.Tooltip("y:Q", title="Typical week (h)", format=".1f")])
+            )
+        st.altair_chart(alt.layer(*layers).properties(height=280), use_container_width=True)
+
+
 def show_data_quality(df_all_events, df_counted, start_date, end_date, accuracy):
     """Flag long events and overlapping events that distort the totals."""
     max_hours = accuracy.get("long_event_hours", 16)
@@ -755,17 +809,19 @@ if all_events:
     
     accuracy = render_accuracy_settings("home")
 
-    # Goals are about the current week/month, independent of the date range below.
+    # Goals and upcoming weeks are about now, independent of the date range below.
+    full_df = build_events_df(all_events, accuracy)
+    full_df["group"] = full_df[group_mode]
+    now = pd.Timestamp.now(tz=full_df["start"].dt.tz)
     goals = load_goals()
     if goals:
-        full_df = build_events_df(all_events, accuracy)
-        now = pd.Timestamp.now(tz=full_df["start"].dt.tz)
         st.subheader("🎯 Goals")
         goal_cols = st.columns(2)
         for i, goal in enumerate(goals):
             with goal_cols[i % 2]:
                 render_goal_progress(goal, evaluate_goal(full_df, goal, now, history=0))
         st.caption("Edit goals and see their history on the Goals page.")
+    show_upcoming_weeks(full_df, group_mode, now.date())
 
     # Process data with progress indicator
     with st.spinner("Processing and filtering calendar data..."):

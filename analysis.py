@@ -287,3 +287,44 @@ def evaluate_goal(df, goal, now, history=12):
         "history_count": len(hist),
         "streak": streak,
     }
+
+
+# --- Typical week and booked weeks ahead ---
+
+def typical_week(df, group_col, week, weeks=8):
+    """Average hours per group over up to `weeks` complete weeks before the
+    week starting on `week` (a Monday). Weeks before the first event are
+    skipped so a short history isn't diluted with empty weeks.
+
+    Returns (per-group Series, average total, number of weeks used).
+    """
+    first = week - timedelta(weeks=weeks)
+    if not df.empty:
+        first = max(first, period_start("week", df["start"].min().date()))
+    if df.empty or first >= week:
+        return pd.Series(dtype=float), 0.0, 0
+    base = hours_by_period(df, "week", first, week - timedelta(days=1), group_col)
+    total = base.sum(axis=1) if group_col else base["hours"]
+    per_group = base.mean() if group_col else pd.Series(dtype=float)
+    return per_group, float(total.mean()), len(base)
+
+
+def booked_weeks(df, group_col, today, weeks_ahead=4, baseline_weeks=8, busy_ratio=1.2):
+    """Hours already booked for the current week and the following weeks,
+    compared with a typical week.
+
+    Returns (per-week-per-group DataFrame, summary DataFrame, typical total,
+    number of baseline weeks). The summary has one row per week with the
+    booked total, the ratio to a typical week and a `busy` flag.
+    """
+    cur = period_start("week", today)
+    last = cur + timedelta(weeks=weeks_ahead - 1)
+    future = hours_by_period(df, "week", cur, last, group_col)
+    _, typical_total, n_weeks = typical_week(df, group_col, cur, baseline_weeks)
+
+    booked = future.sum(axis=1) if group_col else future["hours"]
+    summary = pd.DataFrame({"booked": booked})
+    summary["typical"] = typical_total
+    summary["ratio"] = summary["booked"] / typical_total if typical_total else float("nan")
+    summary["busy"] = summary["ratio"] > busy_ratio
+    return future, summary, typical_total, n_weeks

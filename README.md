@@ -7,6 +7,7 @@
 - 📅 Load multiple calendars from `calendars.txt` or `calendars.json`
 - 📊 Visualize total and relative time spent per day, week, or month
 - 🔥 Activity heatmap (weekday × hour)
+- 🔮 Upcoming weeks: hours already booked for this week and the next 3, compared with a typical week
 - 🍰 Pie chart for calendar/category time distribution
 - 📦 Summary tables with CSV export (includes averages per day/week)
 - 🔄 Dynamically switch between viewing by **Calendar** or **Category**
@@ -30,6 +31,8 @@
 ![Home Overview](img/home/home-overview.png)
 
 ![Sidebar](img/home/home-sidebar.png)
+
+**🔮 Upcoming Weeks**: Home shows the hours already booked for this week and the next three weeks per calendar or category, next to your typical week (average of the last 8 complete weeks). Weeks above 120% of typical are flagged so you can rebalance before they happen. Future calendars are usually incomplete, so this is "booked so far", not a prediction.
 
 ![Summary Table](img/home/home-summary-table.png)
 
