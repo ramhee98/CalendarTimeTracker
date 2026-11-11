@@ -15,7 +15,7 @@
 - 🔍 Search page: Find calendar events by name with detailed views and metrics
 - 👥 Social Analysis page: Analyze who you spend the most time with
 - Compare Periods page: side-by-side comparison of two date ranges with delta metrics
-- 🎯 Goals page: weekly or monthly time targets per calendar or category, with streaks and hit rate
+- 🎯 Goals page: daily, weekly or monthly targets per calendar, category, tag or tag group, with streaks and hit rate
 - 🗓️ Weekly Review page: one-screen review of a week vs your usual weeks, with goals, next week's load and Markdown export
 - 📈 Trends page: visualize calendar activity over time using an interactive line chart
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
@@ -123,14 +123,15 @@ Analyze who you spend the most time with based on calendar event titles.
 
 ### 🎯 Goals
 
-Set time targets and see whether you're living the week you intended.
+Set targets and see whether you're living the week you intended.
 
 - **Min / Max targets**: e.g. "Sport ≥ 4h per week" or "Work ≤ 45h per week", per calendar or category
-- **Weekly or monthly**: weeks run Monday–Sunday
-- **Done vs booked**: hours already passed this period, plus events still scheduled, with a status (reached, on track, behind, over budget)
+- **Tag goals**: count how often a 🏷️ tag or a 🔖 tag group from the Tags page occurs, e.g. "☕ Coffee ≤ 2× per day" or "🧘 Meditation ≥ 5× per week". Tag names match the Tags page (variants merged, hidden tags left out); a tag group goal follows the group's current members
+- **Daily, weekly or monthly**: weeks run Monday–Sunday
+- **Done vs booked**: hours (or tags) already passed this period, plus events still scheduled, with a status (reached, on track, behind, over budget)
 - **History**: bar chart of past periods (met / missed) with the target lines, current streak and hit rate
 - **Home page**: progress bars for every goal at the top
-- **Editable in the app**: pick from one list where every entry shows whether it is a 📅 calendar or a 🗂️ category, so goals for a calendar and a category with the same name can't be mixed up. Goals are stored in `goals.json`
+- **Editable in the app**: pick from one list where every entry shows whether it is a 📅 calendar, 🗂️ category, 🏷️ tag or 🔖 tag group, so targets with the same name can't be mixed up. Goals are stored in `goals.json`
 
 ---
 
@@ -141,7 +142,7 @@ A one-screen weekly ritual instead of comparing four pages by eye.
 - **Week picker**: defaults to last complete week; the current week is marked as in progress
 - **Headline metrics**: total hours vs the average of the previous 4, 8 or 12 weeks, event count, busiest day, latest finish and evenings past 21:00
 - **Hours by calendar/category** vs your usual week, with the biggest changes called out
-- **Weekly goals**: status of every weekly goal for that week
+- **Weekly goals**: status of every weekly goal (time and tag goals) for that week
 - **Day by day**: stacked hours per day
 - **Next week**: hours already booked compared with a typical week
 - **Markdown export**: download the review (aggregates only, no event titles)
@@ -281,7 +282,7 @@ Some calendars contain markers rather than time blocks, for example [oura-tags-i
 }
 ```
 
-Tag calendars are synced like any other calendar, but are left out of all hour totals, charts, goals and Social Analysis. Category and color are ignored. The Settings page points out calendars that look like tag calendars (almost all events all-day or without duration).
+Tag calendars are synced like any other calendar, but are left out of all hour totals, charts, time goals and Social Analysis. Tag goals on the Goals page count their tags. Category and color are ignored. The Settings page points out calendars that look like tag calendars (almost all events all-day or without duration).
 
 ### Files created by the app
 

@@ -14,10 +14,10 @@ from utils import (
     default_view_index,
     load_calendar_urls, load_all_events, load_all_events_from_cache, parse_ics_from_url,
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
-    build_events_df, load_goals, render_goal_progress,
+    build_events_df, load_goals, render_goal_progress, load_tag_occurrences, load_tag_groups,
 )
 from analysis import (
-    clip_to_range, long_event_mask, find_overlaps, union_hours, evaluate_goal,
+    clip_to_range, long_event_mask, find_overlaps, union_hours, evaluate_goal, is_tag_goal,
     booked_weeks, period_label,
 )
 
@@ -678,10 +678,14 @@ if all_events:
     goals = load_goals()
     if goals:
         st.subheader("🎯 Goals")
+        has_tag_goals = any(is_tag_goal(g) for g in goals)
+        tags = load_tag_occurrences() if has_tag_goals else None
+        tag_groups = load_tag_groups() if has_tag_goals else []
         goal_cols = st.columns(2)
         for i, goal in enumerate(goals):
             with goal_cols[i % 2]:
-                render_goal_progress(goal, evaluate_goal(full_df, goal, now, history=0))
+                render_goal_progress(goal, evaluate_goal(full_df, goal, now, history=0,
+                                                         tags=tags, groups=tag_groups))
         st.caption("Edit goals and see their history on the Goals page.")
     show_upcoming_weeks(full_df, group_mode, now.date())
 

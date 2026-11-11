@@ -506,7 +506,13 @@ def _clean_number(value):
 
 
 def load_goals():
-    """Goals as a list of {type, name, period, min, max} dicts."""
+    """Goals as a list of {type, name, period, min, max} dicts.
+
+    type: "calendar", "category", "tag" or "tag_group";
+    period: "day", "week" or "month".
+    """
+    from analysis import GOAL_TYPES, PERIODS
+
     try:
         with open(GOALS_FILE, "r", encoding="utf-8") as f:
             raw = json.load(f).get("goals", [])
@@ -521,8 +527,8 @@ def load_goals():
             "min": _clean_number(g.get("min")),
             "max": _clean_number(g.get("max")),
         }
-        if goal["name"] and goal["type"] in ("calendar", "category") \
-                and goal["period"] in ("week", "month") \
+        if goal["name"] and goal["type"] in GOAL_TYPES \
+                and goal["period"] in PERIODS \
                 and (goal["min"] is not None or goal["max"] is not None):
             goals.append(goal)
     return goals
@@ -596,21 +602,68 @@ def select_group_mode(source_type, key):
     )
 
 
+GOAL_TYPE_LABELS = {
+    "calendar": ("📅", "Calendar"),
+    "category": ("🗂️", "Category"),
+    "tag": ("🏷️", "Tag"),
+    "tag_group": ("🔖", "Tag group"),
+}
+
+
+def goal_type_label(goal_type):
+    """"📅 Calendar", "🏷️ Tag", ... for a goal type."""
+    icon, name = GOAL_TYPE_LABELS.get(goal_type, ("", goal_type))
+    return f"{icon} {name}".strip()
+
+
+def this_period_text(period):
+    return "today" if period == "day" else f"this {period}"
+
+
 def render_goal_progress(goal, result):
     """One progress bar for a goal's current period (Home and Goals page)."""
-    from analysis import goal_target_text
+    from analysis import format_goal_amount, goal_target_text, is_tag_goal
 
+    icon, type_name = GOAL_TYPE_LABELS.get(goal["type"], ("", goal["type"]))
     target = goal["min"] if goal["min"] is not None else goal["max"]
     fraction = min(result["done"] / target, 1.0) if target else 0.0
+    if is_tag_goal(goal):
+        amounts = f"{format_goal_amount(goal, result['done'])}"
+        if result["booked"] != result["done"]:
+            amounts += f" ({format_goal_amount(goal, result['booked'])} incl. planned)"
+        amounts += " of"
+    else:
+        amounts = (f"{format_goal_amount(goal, result['done'])} done, "
+                   f"{format_goal_amount(goal, result['booked'])} booked of")
     st.progress(
         fraction,
         text=(
-            f"{'🗂️' if goal['type'] == 'category' else '📅'} **{goal['name']}** ({goal['type']}) · "
-            f"{result['done']:.1f}h done, "
-            f"{result['booked']:.1f}h booked of {goal_target_text(goal)} this {result['period']}"
+            f"{icon} **{goal['name']}** ({type_name.lower()}) · {amounts} "
+            f"{goal_target_text(goal)} {this_period_text(result['period'])}"
             f" — {result['status_label']}"
         ),
     )
+
+
+def load_tag_occurrences():
+    """Tag occurrences of all tag calendars from the local cache, with tag
+    names as on the Tags page (variants merged, hidden tags left out).
+
+    Used by tag goals. Empty DataFrame when there are no tag events.
+    """
+    from analysis import TAG_COLUMNS, drop_tags, merge_tag_variants, tag_occurrences
+
+    events, _ = load_all_events_from_cache("tags")
+    if not events:
+        return pd.DataFrame(columns=TAG_COLUMNS)
+    df = pd.DataFrame(events)
+    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
+    df = normalize_time(df, tz="local")
+    occ = tag_occurrences(df)
+    settings = load_app_settings()
+    if settings.get("tags_merge_variants", True):
+        occ = merge_tag_variants(occ)
+    return drop_tags(occ, settings.get("tags_hidden", []))
 
 
 # --- calendars.json editing (Settings page) ---

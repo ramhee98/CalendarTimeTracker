@@ -137,17 +137,22 @@ def union_hours(df):
 
 # --- Periods (weeks run Monday-Sunday) ---
 
-PERIODS = ("week", "month")
+PERIODS = ("day", "week", "month")
 
 
 def period_start(period, d):
-    """First day of the week (Monday) or month containing date `d`."""
+    """The day itself, or the first day of the week (Monday) or month
+    containing date `d`."""
+    if period == "day":
+        return d
     if period == "month":
         return d.replace(day=1)
     return d - timedelta(days=d.weekday())
 
 
 def next_period_start(period, ps):
+    if period == "day":
+        return ps + timedelta(days=1)
     if period == "month":
         return (ps.replace(day=28) + timedelta(days=4)).replace(day=1)
     return ps + timedelta(days=7)
@@ -161,6 +166,8 @@ def shift_periods(period, ps, n):
 
 
 def period_label(period, ps):
+    if period == "day":
+        return ps.strftime("%Y-%m-%d")
     if period == "month":
         return ps.strftime("%Y-%m")
     year, week, _ = ps.isocalendar()
@@ -168,7 +175,7 @@ def period_label(period, ps):
 
 
 def hours_by_period(df, period, first, last, group_col=None):
-    """Hours per week/month from the period containing `first` to the one
+    """Hours per day/week/month from the period containing `first` to the one
     containing `last`, splitting events that cross a period boundary.
 
     Returns a DataFrame indexed by period start date with one column per
@@ -201,30 +208,49 @@ def hours_by_period(df, period, first, last, group_col=None):
 
 
 # --- Goals ---
+#
+# Calendar and category goals count hours. Tag and tag group goals count how
+# often a tag occurs (tags are markers, not time) and work on the tag
+# occurrences from tag_occurrences(), with tag names as shown on the Tags page.
 
-def goal_met(goal, hours):
+TIME_GOAL_TYPES = ("calendar", "category")
+TAG_GOAL_TYPES = ("tag", "tag_group")
+GOAL_TYPES = TIME_GOAL_TYPES + TAG_GOAL_TYPES
+
+
+def is_tag_goal(goal):
+    return goal.get("type") in TAG_GOAL_TYPES
+
+
+def format_goal_amount(goal, value):
+    """"2.5h" for time goals, "3×" for tag goals."""
+    return f"{value:g}×" if is_tag_goal(goal) else f"{value:.1f}h"
+
+
+def goal_met(goal, value):
     mn, mx = goal.get("min"), goal.get("max")
-    return (mn is None or hours >= mn - 1e-9) and (mx is None or hours <= mx + 1e-9)
+    return (mn is None or value >= mn - 1e-9) and (mx is None or value <= mx + 1e-9)
 
 
 def goal_target_text(goal):
     mn, mx = goal.get("min"), goal.get("max")
+    unit = "×" if is_tag_goal(goal) else "h"
     if mn is not None and mx is not None:
-        return f"{mn:g}–{mx:g}h"
+        return f"{mn:g}–{mx:g}{unit}"
     if mn is not None:
-        return f"≥ {mn:g}h"
-    return f"≤ {mx:g}h"
+        return f"≥ {mn:g}{unit}"
+    return f"≤ {mx:g}{unit}"
 
 
 def goal_status(goal, done, booked):
     """Status of a goal for a period: (key, label).
 
-    `done` = hours already passed, `booked` = done + still scheduled. For a
-    finished period both are the same.
+    `done` = hours (or tag count) already passed, `booked` = done + still
+    scheduled. For a finished period both are the same.
     """
     mn, mx = goal.get("min"), goal.get("max")
     if mx is not None and done > mx + 1e-9:
-        return "over", "❌ Over budget"
+        return "over", "❌ Over the limit" if is_tag_goal(goal) else "❌ Over budget"
     if mx is not None and booked > mx + 1e-9:
         return "at_risk", "⚠️ Booked over budget"
     if mn is not None:
@@ -232,41 +258,104 @@ def goal_status(goal, done, booked):
             return "met", "✅ Reached"
         if booked >= mn - 1e-9:
             return "on_track", "🗓️ On track (booked)"
-        return "behind", f"⚠️ {mn - booked:.1f}h short even with booked events"
-    return "met", "✅ Within budget"
+        short = mn - booked
+        if is_tag_goal(goal):
+            return "behind", f"⚠️ {short:g}× to go"
+        return "behind", f"⚠️ {short:.1f}h short even with booked events"
+    return "met", "✅ Within the limit" if is_tag_goal(goal) else "✅ Within budget"
 
 
-def goal_events(df, goal):
+def tag_goal_occurrences(tags, goal, groups=()):
+    """Tag occurrences counted by a tag or tag group goal.
+
+    A tag goal matches its tag ignoring the emoji variation selector and
+    spacing; a tag group goal matches the members of the saved group with
+    that name (none if the group no longer exists).
+    """
+    if tags is None or tags.empty:
+        return pd.DataFrame(columns=TAG_COLUMNS)
+    if goal["type"] == "tag":
+        return tags[tags["tag"].map(_variant_key) == _variant_key(goal["name"])]
+    group = next((g for g in groups if g["name"] == goal["name"]), None)
+    if group is None:
+        return tags.iloc[0:0]
+    return tags[tags["tag"].isin(tag_group_members(group, tags["tag"].unique()))]
+
+
+def goal_events(df, goal, tags=None, groups=()):
+    """Events (time goals) or tag occurrences (tag goals) a goal counts."""
+    if is_tag_goal(goal):
+        return tag_goal_occurrences(tags, goal, groups)
     return df[df[goal["type"]] == goal["name"]] if goal["type"] in df else df.iloc[0:0]
 
 
-def evaluate_goal(df, goal, now, history=12):
+def goal_amount(goal, sub, first, end, now=None, tz=None):
+    """Hours (time goals) or tag count (tag goals) of `sub` from date `first`
+    up to date `end` (exclusive), counting only what happened before `now`
+    if given. `tz` is the time zone of the dates (time goals)."""
+    if sub.empty:
+        return 0.0
+    if is_tag_goal(goal):
+        mask = (sub["date"] >= first) & (sub["date"] < end)
+        if now is not None:
+            mask &= sub["date"] <= now.date()
+        return float(mask.sum())
+    hi = local_midnight(end, tz)
+    if now is not None:
+        hi = min(now, hi)
+    return float(clip_between(sub, local_midnight(first, tz), hi)["duration_hours"].sum())
+
+
+def _goal_history(goal, sub, period, first, last):
+    """Hours or tag count per period from the period containing `first` to
+    the one containing `last`, as a Series indexed by period start."""
+    if not is_tag_goal(goal):
+        return hours_by_period(sub, period, first, last)["hours"]
+    starts = []
+    ps = period_start(period, first)
+    while ps <= last:
+        starts.append(ps)
+        ps = next_period_start(period, ps)
+    counts = sub["date"].map(lambda d: period_start(period, d)).value_counts()
+    return counts.reindex(starts, fill_value=0).astype(float)
+
+
+def evaluate_goal(df, goal, now, history=12, tags=None, groups=()):
     """Progress of one goal for the current period plus its recent history.
 
-    `now` is a tz-aware Timestamp. History covers up to `history` complete
-    periods before the current one, starting no earlier than the first event
-    of the goal's calendar/category (so a new calendar isn't counted as
-    weeks of misses).
+    `now` is a tz-aware Timestamp. `tags` (tag occurrences) and `groups`
+    (tag groups) are only needed for tag goals. History covers up to
+    `history` complete periods before the current one, starting no earlier
+    than the first event of the goal's calendar/category, or the first tag
+    of any kind for tag goals (so a new calendar isn't counted as weeks of
+    misses, while days without a tracked tag still count).
     """
     period = goal.get("period", "week")
-    sub = goal_events(df, goal)
-    tz = df["start"].dt.tz if not df.empty else None
+    sub = goal_events(df, goal, tags, groups)
+    tz = df["start"].dt.tz if not df.empty else now.tz
     cur = period_start(period, now.date())
     nxt = next_period_start(period, cur)
-    lo, hi = local_midnight(cur, tz), local_midnight(nxt, tz)
 
-    booked = clip_between(sub, lo, hi)["duration_hours"].sum()
-    done = clip_between(sub, lo, min(now, hi))["duration_hours"].sum()
+    booked = goal_amount(goal, sub, cur, nxt, tz=tz)
+    done = goal_amount(goal, sub, cur, nxt, now=now, tz=tz)
     status, status_label = goal_status(goal, done, booked)
 
-    first = shift_periods(period, cur, -history)
-    if not sub.empty:
-        first = max(first, period_start(period, sub["start"].min().date()))
-    if sub.empty or first >= cur:
-        hist = pd.DataFrame({"hours": []}, index=pd.Index([], name="period_start"))
+    if is_tag_goal(goal):
+        tracked = tags if tags is not None and not tags.empty else None
+        tracked_from = tracked["date"].min() if tracked is not None else None
     else:
-        hist = hours_by_period(sub, period, first, cur - timedelta(days=1))
-    hist["met"] = [goal_met(goal, h) for h in hist["hours"]]
+        tracked_from = sub["start"].min().date() if not sub.empty else None
+
+    first = shift_periods(period, cur, -history)
+    if tracked_from is not None:
+        first = max(first, period_start(period, tracked_from))
+    if tracked_from is None or first >= cur:
+        values = pd.Series([], dtype=float, index=pd.Index([], name="period_start"))
+    else:
+        values = _goal_history(goal, sub, period, first, cur - timedelta(days=1))
+    hist = pd.DataFrame({"value": values.astype(float)})
+    hist.index.name = "period_start"
+    hist["met"] = [goal_met(goal, v) for v in hist["value"]]
 
     streak = 0
     for met in reversed(hist["met"].tolist()):

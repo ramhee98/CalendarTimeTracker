@@ -4,11 +4,12 @@ import altair as alt
 from datetime import date, timedelta
 from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
-    select_group_mode, load_goals,
+    select_group_mode, load_goals, load_tag_occurrences, load_tag_groups,
 )
 from analysis import (
     clip_between, local_midnight, period_start, period_label, typical_week,
     hours_by_period, goal_events, goal_status, goal_target_text, long_event_mask,
+    goal_amount, format_goal_amount, is_tag_goal,
 )
 
 st.set_page_config(page_title="Weekly Review", layout="wide")
@@ -151,17 +152,22 @@ weekly_goals = [g for g in load_goals() if g["period"] == "week"]
 goal_lines = []
 if weekly_goals:
     st.subheader("🎯 Weekly Goals")
+    has_tag_goals = any(is_tag_goal(g) for g in weekly_goals)
+    tags = load_tag_occurrences() if has_tag_goals else None
+    tag_groups = load_tag_groups() if has_tag_goals else []
     rows = []
+    week_end = week + timedelta(days=7)
     for goal in weekly_goals:
-        sub = goal_events(df, goal)
-        booked = clip_between(sub, lo, hi)["duration_hours"].sum()
-        done = clip_between(sub, lo, min(now, hi))["duration_hours"].sum()
+        sub = goal_events(df, goal, tags, tag_groups)
+        booked = goal_amount(goal, sub, week, week_end, tz=tz)
+        done = goal_amount(goal, sub, week, week_end, now=now, tz=tz)
         _, label = goal_status(goal, done, booked)
-        rows.append({"Goal": f"{goal['name']} ({goal['type']})", "Target": goal_target_text(goal),
-                     "Hours": round(booked, 1), "Status": label})
-        goal_lines.append(f"{goal['name']} {goal_target_text(goal)}: {booked:.1f}h — {label}")
+        amount = format_goal_amount(goal, booked)
+        rows.append({"Goal": f"{goal['name']} ({goal['type'].replace('_', ' ')})", "Target": goal_target_text(goal),
+                     "Amount": amount, "Status": label})
+        goal_lines.append(f"{goal['name']} {goal_target_text(goal)}: {amount} — {label}")
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-    st.caption("Monthly goals and goal history are on the Goals page.")
+    st.caption("Daily and monthly goals and goal history are on the Goals page.")
 
 # --- Day by day ---
 st.subheader("Day by Day")
