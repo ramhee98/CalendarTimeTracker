@@ -502,7 +502,12 @@ else:
     selected_calendar_names = st.multiselect(
         "Select calendars to analyze",
         options=list(calendar_options.keys()),
-        default=st.session_state.settings.get("selected_calendars", []),
+        # Drop saved calendars that are no longer configured (renamed or
+        # removed); st.multiselect raises on defaults missing from options.
+        default=[
+            name for name in st.session_state.settings.get("selected_calendars", [])
+            if name in calendar_options
+        ],
         help="Select one or more calendars"
     )
     
