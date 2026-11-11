@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from ics import Calendar
-from calendar_store import update_event_store, expand_calendar_events, decode_ics_response
+from calendar_store import update_event_store, expand_calendar_events, decode_ics_response, is_free_event
 from utils import load_calendar_urls
 import requests
 import os
@@ -93,7 +93,8 @@ if uploaded_file and target_url:
                 "start": start,
                 "end": end,
                 "duration_hours": duration,
-                "uid": occ_uid
+                "uid": occ_uid,
+                "free": is_free_event(event),
             })
         for e in errors:
             st.error(f"Skipping event due to error: {e}")

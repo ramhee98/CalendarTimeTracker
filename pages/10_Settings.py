@@ -264,6 +264,13 @@ with tab_display:
             "Treat events longer than (hours) as long", min_value=1, max_value=168,
             value=int(settings["long_event_hours"]), step=1,
         )
+        ignore_free = st.checkbox(
+            "Ignore events marked as free",
+            value=bool(settings.get("ignore_free_events")),
+            help="Leave out events whose availability is \"Free\" instead of \"Busy\" "
+                 "(iCal TRANSP:TRANSPARENT). Sync once after updating so the cache "
+                 "knows which events are free.",
+        )
 
         st.markdown("**Defaults when a page opens**")
         has_categories = load_calendar_urls()[1] == "json"
@@ -289,6 +296,7 @@ with tab_display:
             settings.update({
                 "long_events": long_events,
                 "long_event_hours": int(long_hours),
+                "ignore_free_events": bool(ignore_free),
                 "default_view": default_view,
                 "default_range_months": int(default_range),
             })

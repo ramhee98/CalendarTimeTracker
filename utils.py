@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import tzlocal
 from ics import Calendar
 import calendar as cal_module
-from calendar_store import update_event_store, load_cached_events, expand_calendar_events, decode_ics_response
+from calendar_store import update_event_store, load_cached_events, expand_calendar_events, decode_ics_response, is_free_event
 
 
 def get_version():
@@ -106,7 +106,8 @@ def fetch_and_parse_ics(url, calendar_name):
             "start": start,
             "end": end,
             "duration_hours": duration,
-            "uid": occ_uid
+            "uid": occ_uid,
+            "free": is_free_event(event),
         })
 
     new_df = pd.DataFrame(events)
@@ -371,6 +372,8 @@ DEFAULT_APP_SETTINGS = {
     "long_events": "include",
     # Events longer than this (hours) count as long even if not all-day.
     "long_event_hours": 16,
+    # Drop events marked as free / available (iCal TRANSP:TRANSPARENT).
+    "ignore_free_events": False,
     # Initial "View data by" choice on every page (calendars.json only).
     "default_view": "calendar",
     # Initial length of the date range pickers in months (0 = all data).
@@ -430,6 +433,7 @@ def render_accuracy_settings(page_key):
     def _save():
         settings["long_events"] = st.session_state[f"{page_key}_long_events"]
         settings["long_event_hours"] = st.session_state[f"{page_key}_long_event_hours"]
+        settings["ignore_free_events"] = st.session_state[f"{page_key}_ignore_free"]
         save_app_settings(settings)
 
     with st.sidebar.expander("⚖️ Data accuracy"):
@@ -452,14 +456,37 @@ def render_accuracy_settings(page_key):
             key=f"{page_key}_long_event_hours",
             on_change=_save,
         )
+        st.checkbox(
+            "Ignore events marked as free",
+            value=bool(settings.get("ignore_free_events")),
+            key=f"{page_key}_ignore_free",
+            on_change=_save,
+            help="Leave out events whose availability is \"Free\" instead of "
+                 "\"Busy\". Sync once after updating so the cache knows which "
+                 "events are free.",
+        )
     return settings
 
 
+def drop_free_events(df, settings=None):
+    """Drop events marked as free if the user chose to ignore them.
+
+    Events cached before the "free" column existed count as busy.
+    """
+    settings = settings or load_app_settings()
+    if settings.get("ignore_free_events") and not df.empty and "free" in df:
+        free = df["free"].map(lambda v: str(v).strip().lower() == "true")
+        df = df[~free]
+    return df
+
+
 def apply_accuracy_settings(df, settings=None):
-    """Drop long events from `df` if the user chose to exclude them."""
+    """Drop long events from `df` if the user chose to exclude them, and
+    free events if the user chose to ignore them."""
     from analysis import long_event_mask
 
     settings = settings or load_app_settings()
+    df = drop_free_events(df, settings)
     if settings.get("long_events") == "exclude" and not df.empty:
         df = df[~long_event_mask(df, settings.get("long_event_hours", 16))]
     return df

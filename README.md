@@ -52,6 +52,7 @@
 A 3-day trip stored as one event counts as 72 hours, and the same meeting in two calendars counts twice. Both quietly inflate every chart.
 
 - **⚖️ Data accuracy** (sidebar on Home, Compare Periods, Trends and AI Insights): count all-day and multi-day events fully, or exclude them. Events longer than a configurable number of hours (default 16) also count as long. The choice is stored in `app_settings.json` and applies to every page.
+- **Ignore events marked as free** (⚖️ Data accuracy and Settings → Data & display): leaves out events whose availability is "Free" (iCal `TRANSP:TRANSPARENT`) on every page. Run 🔄 Sync Calendars once after updating so the cache records which events are free.
 - **🩺 Data Quality** (Home): lists long events in the selected range, overlapping events grouped by calendar pair, and the total double-counted hours.
 - Events that straddle the edge of a selected range only count with their in-range part on every page, not just in the Home summary table.
 

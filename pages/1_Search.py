@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range
+from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, drop_free_events
 import pandas as pd
 
 st.set_page_config(page_title="Search Events", layout="wide")
@@ -49,6 +49,7 @@ with st.spinner("Processing calendar data..."):
     df = pd.DataFrame(all_events)
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     df = normalize_time(df, tz="local")
+    df = drop_free_events(df)
 
 # --- View selector like app.py ---
 if source_type == "json":

@@ -8,8 +8,8 @@ import json
 import os
 import requests
 import calendar
-from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response
-from utils import select_month_range, normalize_time, ensure_ics_content
+from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response, is_free_event
+from utils import select_month_range, normalize_time, ensure_ics_content, drop_free_events
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
 st.title("👥 Social Time Analysis")
@@ -103,6 +103,7 @@ def load_events_from_cache(url, calendar_name):
             "start": row["start"],
             "end": row["end"],
             "duration_hours": row["duration_hours"],
+            "free": row.get("free", False),
         })
     return events
 
@@ -134,6 +135,7 @@ def fetch_calendar_events(url, calendar_name):
                 "end": end,
                 "duration_hours": (end - start).total_seconds() / 3600,
                 "uid": occ_uid,
+                "free": is_free_event(event),
             })
 
         # Update the shared CSV cache so other pages benefit. An empty feed
@@ -553,6 +555,7 @@ if all_events:
     # Convert UTC timestamps to local time so date filtering, "Last Seen" and
     # cadence match the other pages (which all normalize to local time).
     df = normalize_time(df, tz="local")
+    df = drop_free_events(df)
 
     # Check for "Busy" events
     unique_titles = df['title'].unique()

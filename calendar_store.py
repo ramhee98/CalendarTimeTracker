@@ -169,6 +169,11 @@ def expand_calendar_events(events, errors=None, **kwargs):
     return result
 
 
+def is_free_event(event):
+    """True if the event is marked as free / available (TRANSP:TRANSPARENT)."""
+    return bool(getattr(event, "transparent", False))
+
+
 _OCCURRENCE_SUFFIX = re.compile(r"-\d{4}-\d{2}-\d{2}$")
 
 
