@@ -259,19 +259,24 @@ with st.expander("📋 Show counts table"):
     table.index = [d.strftime("%Y-%m-%d") if period == "day" else period_label(period, d) for d in table.index]
     st.dataframe(table, use_container_width=True)
 
+# Heatmap rows: a fixed height per tag, and never hide labels. Vega drops
+# labels it thinks overlap, which with emojis happened to every other row.
+ROW_HEIGHT = 30
+TAG_AXIS = alt.Axis(labelOverlap=False, labelLimit=300, labelFontSize=12)
+
 # --- Weekday pattern ---
 weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 st.subheader("Weekday pattern")
 by_weekday = sel.groupby(["tag", "weekday"]).size().reset_index(name="count")
 base = alt.Chart(by_weekday).encode(
     x=alt.X("weekday:N", sort=weekdays, title=""),
-    y=alt.Y("tag:N", sort=selected, title=""),
+    y=alt.Y("tag:N", sort=selected, title="", axis=TAG_AXIS),
 )
 st.altair_chart(
     (base.mark_rect().encode(color=alt.Color("count:Q", title="Count", scale=alt.Scale(scheme="oranges")),
                              tooltip=["tag:N", "weekday:N", "count:Q"])
      + base.mark_text(fontSize=11).encode(text="count:Q"))
-    .properties(height=max(120, 32 * len(selected))),
+    .properties(height=alt.Step(ROW_HEIGHT)),
     use_container_width=True,
 )
 
@@ -285,13 +290,13 @@ else:
     by_hour = timed.groupby(["tag", "hour"]).size().reset_index(name="count")
     base = alt.Chart(by_hour).encode(
         x=alt.X("hour:O", title="Hour of day", scale=alt.Scale(domain=list(range(24)))),
-        y=alt.Y("tag:N", sort=selected, title=""),
+        y=alt.Y("tag:N", sort=selected, title="", axis=TAG_AXIS),
     )
     st.altair_chart(
         (base.mark_rect().encode(color=alt.Color("count:Q", title="Count", scale=alt.Scale(scheme="blues")),
                                  tooltip=["tag:N", "hour:O", "count:Q"])
          + base.mark_text(fontSize=11).encode(text="count:Q"))
-        .properties(height=max(120, 32 * timed["tag"].nunique())),
+        .properties(height=alt.Step(ROW_HEIGHT)),
         use_container_width=True,
     )
     all_day_tags = sorted(set(sel.loc[sel["all_day"], "tag"]))
