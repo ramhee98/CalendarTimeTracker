@@ -133,3 +133,157 @@ def union_hours(df):
             cur_end = e
     total += cur_end - cur_start
     return total.total_seconds() / 3600
+
+
+# --- Periods (weeks run Monday-Sunday) ---
+
+PERIODS = ("week", "month")
+
+
+def period_start(period, d):
+    """First day of the week (Monday) or month containing date `d`."""
+    if period == "month":
+        return d.replace(day=1)
+    return d - timedelta(days=d.weekday())
+
+
+def next_period_start(period, ps):
+    if period == "month":
+        return (ps.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return ps + timedelta(days=7)
+
+
+def shift_periods(period, ps, n):
+    """Move the period start `ps` by `n` periods (negative = back in time)."""
+    for _ in range(abs(n)):
+        ps = next_period_start(period, ps) if n > 0 else period_start(period, ps - timedelta(days=1))
+    return ps
+
+
+def period_label(period, ps):
+    if period == "month":
+        return ps.strftime("%Y-%m")
+    year, week, _ = ps.isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+def hours_by_period(df, period, first, last, group_col=None):
+    """Hours per week/month from the period containing `first` to the one
+    containing `last`, splitting events that cross a period boundary.
+
+    Returns a DataFrame indexed by period start date with one column per
+    group (or a single `hours` column when `group_col` is None). Periods
+    without events are included as zeros.
+    """
+    starts = []
+    ps = period_start(period, first)
+    while ps <= last:
+        starts.append(ps)
+        ps = next_period_start(period, ps)
+    if not starts:
+        return pd.DataFrame()
+
+    tz = df["start"].dt.tz if not df.empty else None
+    window = clip_between(df, local_midnight(starts[0], tz),
+                          local_midnight(next_period_start(period, starts[-1]), tz))
+    records = []
+    for ps in starts:
+        part = clip_between(window, local_midnight(ps, tz),
+                            local_midnight(next_period_start(period, ps), tz))
+        if group_col:
+            records.append(part.groupby(group_col)["duration_hours"].sum().to_dict())
+        else:
+            records.append({"hours": part["duration_hours"].sum()})
+    out = pd.DataFrame(records, index=pd.Index(starts, name="period_start")).fillna(0.0)
+    if group_col is None and "hours" not in out:
+        out["hours"] = 0.0
+    return out
+
+
+# --- Goals ---
+
+def goal_met(goal, hours):
+    mn, mx = goal.get("min"), goal.get("max")
+    return (mn is None or hours >= mn - 1e-9) and (mx is None or hours <= mx + 1e-9)
+
+
+def goal_target_text(goal):
+    mn, mx = goal.get("min"), goal.get("max")
+    if mn is not None and mx is not None:
+        return f"{mn:g}–{mx:g}h"
+    if mn is not None:
+        return f"≥ {mn:g}h"
+    return f"≤ {mx:g}h"
+
+
+def goal_status(goal, done, booked):
+    """Status of a goal for a period: (key, label).
+
+    `done` = hours already passed, `booked` = done + still scheduled. For a
+    finished period both are the same.
+    """
+    mn, mx = goal.get("min"), goal.get("max")
+    if mx is not None and done > mx + 1e-9:
+        return "over", "❌ Over budget"
+    if mx is not None and booked > mx + 1e-9:
+        return "at_risk", "⚠️ Booked over budget"
+    if mn is not None:
+        if done >= mn - 1e-9:
+            return "met", "✅ Reached"
+        if booked >= mn - 1e-9:
+            return "on_track", "🗓️ On track (booked)"
+        return "behind", f"⚠️ {mn - booked:.1f}h short even with booked events"
+    return "met", "✅ Within budget"
+
+
+def goal_events(df, goal):
+    return df[df[goal["type"]] == goal["name"]] if goal["type"] in df else df.iloc[0:0]
+
+
+def evaluate_goal(df, goal, now, history=12):
+    """Progress of one goal for the current period plus its recent history.
+
+    `now` is a tz-aware Timestamp. History covers up to `history` complete
+    periods before the current one, starting no earlier than the first event
+    of the goal's calendar/category (so a new calendar isn't counted as
+    weeks of misses).
+    """
+    period = goal.get("period", "week")
+    sub = goal_events(df, goal)
+    tz = df["start"].dt.tz if not df.empty else None
+    cur = period_start(period, now.date())
+    nxt = next_period_start(period, cur)
+    lo, hi = local_midnight(cur, tz), local_midnight(nxt, tz)
+
+    booked = clip_between(sub, lo, hi)["duration_hours"].sum()
+    done = clip_between(sub, lo, min(now, hi))["duration_hours"].sum()
+    status, status_label = goal_status(goal, done, booked)
+
+    first = shift_periods(period, cur, -history)
+    if not sub.empty:
+        first = max(first, period_start(period, sub["start"].min().date()))
+    if sub.empty or first >= cur:
+        hist = pd.DataFrame({"hours": []}, index=pd.Index([], name="period_start"))
+    else:
+        hist = hours_by_period(sub, period, first, cur - timedelta(days=1))
+    hist["met"] = [goal_met(goal, h) for h in hist["hours"]]
+
+    streak = 0
+    for met in reversed(hist["met"].tolist()):
+        if not met:
+            break
+        streak += 1
+
+    return {
+        "period": period,
+        "period_start": cur,
+        "period_end": nxt - timedelta(days=1),
+        "done": done,
+        "booked": booked,
+        "status": status,
+        "status_label": status_label,
+        "history": hist,
+        "met_count": int(hist["met"].sum()),
+        "history_count": len(hist),
+        "streak": streak,
+    }

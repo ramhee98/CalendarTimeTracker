@@ -399,3 +399,117 @@ def apply_accuracy_settings(df, settings=None):
     if settings.get("long_events") == "exclude" and not df.empty:
         df = df[~long_event_mask(df, settings.get("long_event_hours", 16))]
     return df
+
+
+# --- Goals (goals.json) ---
+
+GOALS_FILE = "goals.json"
+
+
+def _clean_number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if pd.isna(number) else number
+
+
+def load_goals():
+    """Goals as a list of {type, name, period, min, max} dicts."""
+    try:
+        with open(GOALS_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f).get("goals", [])
+    except (FileNotFoundError, json.JSONDecodeError, AttributeError):
+        return []
+    goals = []
+    for g in raw:
+        goal = {
+            "type": g.get("type", "calendar"),
+            "name": str(g.get("name", "")).strip(),
+            "period": g.get("period", "week"),
+            "min": _clean_number(g.get("min")),
+            "max": _clean_number(g.get("max")),
+        }
+        if goal["name"] and goal["type"] in ("calendar", "category") \
+                and goal["period"] in ("week", "month") \
+                and (goal["min"] is not None or goal["max"] is not None):
+            goals.append(goal)
+    return goals
+
+
+def save_goals(goals):
+    with open(GOALS_FILE, "w", encoding="utf-8") as f:
+        json.dump({"goals": goals}, f, indent=2, ensure_ascii=False)
+
+
+# --- Shared page helpers ---
+
+def load_events_for_page(page_key):
+    """Quick Load / Sync buttons plus cache-first loading, as on every page.
+
+    Stops the page when no events are available.
+    """
+    flag = f"force_refresh_{page_key}"
+    _, col2, col3 = st.columns([2, 1, 1])
+    with col2:
+        if st.button("⚡ Quick Load", help="Load instantly from local cache", key=f"{page_key}_quick"):
+            st.session_state[flag] = False
+            st.rerun()
+    with col3:
+        if st.button("🔄 Sync Calendars", help="Fetch latest data from calendar URLs", key=f"{page_key}_sync"):
+            st.cache_data.clear()
+            st.session_state[flag] = True
+            st.rerun()
+
+    if st.session_state.get(flag, False):
+        st.session_state[flag] = False
+        with st.spinner("Fetching latest calendar data from URLs..."):
+            all_events, source_type = load_all_events()
+    else:
+        with st.spinner("Loading calendar data from cache..."):
+            all_events, source_type = load_all_events_from_cache()
+            if not all_events:
+                with st.spinner("No cache found, fetching from URLs..."):
+                    all_events, source_type = load_all_events()
+
+    if not all_events:
+        st.warning("No events available.")
+        st.stop()
+    return all_events, source_type
+
+
+def build_events_df(all_events, accuracy=None):
+    """Events DataFrame with local times, display calendar names and the
+    data-accuracy rule applied."""
+    df = pd.DataFrame(all_events)
+    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
+    df = normalize_time(df, tz="local")
+    return apply_accuracy_settings(df, accuracy)
+
+
+def select_group_mode(source_type, key):
+    if source_type != "json":
+        return "calendar"
+    return st.selectbox(
+        "View data by",
+        options=["calendar", "category"],
+        index=0,
+        format_func=str.title,
+        key=key,
+    )
+
+
+def render_goal_progress(goal, result):
+    """One progress bar for a goal's current period (Home and Goals page)."""
+    from analysis import goal_target_text
+
+    target = goal["min"] if goal["min"] is not None else goal["max"]
+    fraction = min(result["done"] / target, 1.0) if target else 0.0
+    st.progress(
+        fraction,
+        text=(
+            f"**{goal['name']}** ({goal['type']}) · {result['done']:.1f}h done, "
+            f"{result['booked']:.1f}h booked of {goal_target_text(goal)} this {result['period']}"
+            f" — {result['status_label']}"
+        ),
+    )

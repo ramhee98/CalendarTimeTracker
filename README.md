@@ -14,6 +14,7 @@
 - 🔍 Search page: Find calendar events by name with detailed views and metrics
 - 👥 Social Analysis page: Analyze who you spend the most time with
 - Compare Periods page: side-by-side comparison of two date ranges with delta metrics
+- 🎯 Goals page: weekly or monthly time targets per calendar or category, with streaks and hit rate
 - 📈 Trends page: visualize calendar activity over time using an interactive line chart
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
@@ -110,6 +111,19 @@ Analyze who you spend the most time with based on calendar event titles.
 - **Quick Add**: Add a person by hand without editing the sidebar list
 - **Sample Events**: Review events that no tracked person matched, to spot names you are still missing
 - **Persistent Settings**: All configurations saved to `social_analysis_settings.json` (sorted alphabetically)
+
+---
+
+### 🎯 Goals
+
+Set time targets and see whether you're living the week you intended.
+
+- **Min / Max targets**: e.g. "Sport ≥ 4h per week" or "Work ≤ 45h per week", per calendar or category
+- **Weekly or monthly**: weeks run Monday–Sunday
+- **Done vs booked**: hours already passed this period, plus events still scheduled, with a status (reached, on track, behind, over budget)
+- **History**: bar chart of past periods (met / missed) with the target lines, current streak and hit rate
+- **Home page**: progress bars for every goal at the top
+- **Editable in the app**: goals are stored in `goals.json`
 
 ---
 

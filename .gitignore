@@ -23,6 +23,7 @@ ai_config.json
 ai_responses_cache.json
 social_analysis_settings.json
 app_settings.json
+goals.json
 
 # VS Code
 .vscode/

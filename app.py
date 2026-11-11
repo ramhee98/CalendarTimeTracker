@@ -12,8 +12,11 @@ import colorsys
 import tzlocal
 import threading
 import time
-from utils import select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings
-from analysis import clip_to_range, long_event_mask, find_overlaps, union_hours
+from utils import (
+    select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
+    build_events_df, load_goals, render_goal_progress,
+)
+from analysis import clip_to_range, long_event_mask, find_overlaps, union_hours, evaluate_goal
 
 # Streamlit UI
 st.set_page_config(page_title="CalendarTimeTracker", layout="wide")
@@ -751,6 +754,18 @@ if all_events:
         group_mode = "calendar"
     
     accuracy = render_accuracy_settings("home")
+
+    # Goals are about the current week/month, independent of the date range below.
+    goals = load_goals()
+    if goals:
+        full_df = build_events_df(all_events, accuracy)
+        now = pd.Timestamp.now(tz=full_df["start"].dt.tz)
+        st.subheader("🎯 Goals")
+        goal_cols = st.columns(2)
+        for i, goal in enumerate(goals):
+            with goal_cols[i % 2]:
+                render_goal_progress(goal, evaluate_goal(full_df, goal, now, history=0))
+        st.caption("Edit goals and see their history on the Goals page.")
 
     # Process data with progress indicator
     with st.spinner("Processing and filtering calendar data..."):
