@@ -31,8 +31,19 @@ def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now
         # under any realistic timezone offset.
         start_utc = start_utc.replace(hour=12, minute=0, second=0, microsecond=0)
         end_utc = end_utc.replace(hour=12, minute=0, second=0, microsecond=0)
-    duration = end_utc - start_utc
     uid = event.uid
+
+    # Expand in the event's own timezone so a 09:00 series stays at 09:00
+    # local time across DST changes (and BYDAY is evaluated on local
+    # weekdays). All-day events keep their noon-UTC anchor.
+    if getattr(event, "all_day", False):
+        dtstart = start_utc
+        duration = end_utc - start_utc
+    else:
+        dtstart = event.begin.datetime
+        local_end = event.end.datetime.astimezone(dtstart.tzinfo)
+        # Wall-clock duration, added to each occurrence in local time.
+        duration = local_end.replace(tzinfo=None) - dtstart.replace(tzinfo=None)
 
     rrule_line = next(
         (c.value for c in getattr(event, "extra", []) if c.name == "RRULE"), None
@@ -62,19 +73,21 @@ def expand_event_occurrences(event, horizon_days=400, max_occurrences=10000, now
     rrule_line = re.sub(r"UNTIL=(\d{8}T\d{6})(?=;|$)", r"UNTIL=\1Z", rrule_line)
 
     try:
-        rule = rrulestr(rrule_line, dtstart=start_utc)
+        rule = rrulestr(rrule_line, dtstart=dtstart)
     except Exception:
         # Malformed rule: fall back to a single occurrence rather than crashing.
         return [(start_utc, end_utc, uid)]
 
     occurrences = []
-    for occ_start in rule:
+    for occ_local in rule:
+        occ_start = occ_local.astimezone(timezone.utc)
         if occ_start > horizon or len(occurrences) >= max_occurrences:
             break
         if occ_start.date() in exdates:
             continue
+        occ_end = (occ_local + duration).astimezone(timezone.utc)
         occ_uid = f"{uid}-{occ_start.date().isoformat()}" if uid else None
-        occurrences.append((occ_start, occ_start + duration, occ_uid))
+        occurrences.append((occ_start, occ_end, occ_uid))
 
     # If the rule produced nothing in range, keep the master occurrence.
     return occurrences or [(start_utc, end_utc, uid)]
