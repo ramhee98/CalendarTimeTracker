@@ -65,50 +65,58 @@ def random_distinct_color(index, total_colors):
     return color
 
 
+def fetch_and_parse_ics(url, calendar_name):
+    """Fetch an .ics feed, expand its events and merge them into the CSV cache.
+
+    No Streamlit dependencies, so the background refresher can use it too.
+    Raises on fetch/parse errors; callers decide how to report them.
+    """
+    # Fetch .ics content
+    parsed_url = urlparse(url)
+    # Check if it's a local file URL
+    if parsed_url.scheme == "file":
+        path = parsed_url.path
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+    else:
+        response = requests.get(url)
+        if response.status_code != 200:
+            return []
+        content = response.text
+
+    ensure_ics_content(content)
+
+    # Extract calendar name from raw text if not set by calendars file
+    if calendar_name == "Unnamed":
+        for line in content.splitlines():
+            if line.startswith("X-WR-CALNAME:"):
+                calendar_name = line.replace("X-WR-CALNAME:", "").strip()
+                break
+
+    # Parse using ics
+    ics_cal = Calendar(content)
+    events = []
+    # Expand recurring events into individual occurrences.
+    for event, start, end, occ_uid in expand_calendar_events(ics_cal.events):
+        duration = (end - start).total_seconds() / 3600
+        events.append({
+            "calendar": calendar_name,
+            "event_name": event.name or "Untitled Event",
+            "start": start,
+            "end": end,
+            "duration_hours": duration,
+            "uid": occ_uid
+        })
+
+    new_df = pd.DataFrame(events)
+    combined_df = update_event_store(url, new_df)
+    return combined_df.to_dict("records")
+
+
 @st.cache_data(ttl=3600, show_spinner=False)  # Spinner handled manually by callers
 def parse_ics_from_url(url, calendar_name):
     try:
-        # Fetch .ics content
-        parsed_url = urlparse(url)
-        # Check if it's a local file URL
-        if parsed_url.scheme == "file":
-            path = parsed_url.path
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-        else:
-            response = requests.get(url)
-            if response.status_code != 200:
-                return []
-            content = response.text
-
-        ensure_ics_content(content)
-
-        # Extract calendar name from raw text if not set by calendars file
-        if calendar_name == "Unnamed":
-            for line in content.splitlines():
-                if line.startswith("X-WR-CALNAME:"):
-                    calendar_name = line.replace("X-WR-CALNAME:", "").strip()
-                    break
-
-        # Parse using ics
-        ics_cal = Calendar(content)
-        events = []
-        # Expand recurring events into individual occurrences.
-        for event, start, end, occ_uid in expand_calendar_events(ics_cal.events):
-            duration = (end - start).total_seconds() / 3600
-            events.append({
-                "calendar": calendar_name,
-                "event_name": event.name or "Untitled Event",
-                "start": start,
-                "end": end,
-                "duration_hours": duration,
-                "uid": occ_uid
-            })
-
-        new_df = pd.DataFrame(events)
-        combined_df = update_event_store(url, new_df)
-        return combined_df.to_dict("records")
-
+        return fetch_and_parse_ics(url, calendar_name)
     except Exception as e:
         st.error(f"Error loading {url}: {e}")
         return []

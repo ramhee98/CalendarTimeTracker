@@ -5,16 +5,14 @@ from datetime import datetime, date, timedelta, timezone
 import altair as alt
 import os
 import shutil
-from calendar_store import update_event_store, load_cached_events, expand_calendar_events
-from ics import Calendar
+from calendar_store import load_cached_events
 import calendar
 import json
 import colorsys
-from urllib.parse import urlparse
 import tzlocal
 import threading
 import time
-from utils import select_month_range, ensure_ics_content
+from utils import select_month_range, fetch_and_parse_ics
 
 # Streamlit UI
 st.set_page_config(page_title="CalendarTimeTracker", layout="wide")
@@ -79,47 +77,7 @@ def random_distinct_color(index, total_colors):
 def _fetch_and_parse_ics(url, calendar_name):
     """Core function to fetch and parse ICS - no Streamlit dependencies."""
     try:
-        # Fetch .ics content
-        parsed_url = urlparse(url)
-        # Check if it's a local file URL
-        if parsed_url.scheme == "file":
-            path = parsed_url.path
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-        else:
-            response = requests.get(url)
-            if response.status_code != 200:
-                return []
-            content = response.text
-
-        ensure_ics_content(content)
-
-        # Extract calendar name from raw text if not set by calendars file
-        if calendar_name == "Unnamed":
-            for line in content.splitlines():
-                if line.startswith("X-WR-CALNAME:"):
-                    calendar_name = line.replace("X-WR-CALNAME:", "").strip()
-                    break
-
-        # Parse using ics
-        cal = Calendar(content)
-        events = []
-        # Expand recurring events into individual occurrences.
-        for event, start, end, occ_uid in expand_calendar_events(cal.events):
-            duration = (end - start).total_seconds() / 3600
-            events.append({
-                "calendar": calendar_name,
-                "event_name": event.name or "Untitled Event",
-                "start": start,
-                "end": end,
-                "duration_hours": duration,
-                "uid": occ_uid
-            })
-
-        new_df = pd.DataFrame(events)
-        combined_df = update_event_store(url, new_df)
-        return combined_df.to_dict("records")
-
+        return fetch_and_parse_ics(url, calendar_name)
     except Exception as e:
         print(f"Error loading {url}: {e}")
         return []
