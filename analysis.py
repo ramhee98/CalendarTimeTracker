@@ -328,3 +328,95 @@ def booked_weeks(df, group_col, today, weeks_ahead=4, baseline_weeks=8, busy_rat
     summary["ratio"] = summary["booked"] / typical_total if typical_total else float("nan")
     summary["busy"] = summary["ratio"] > busy_ratio
     return future, summary, typical_total, n_weeks
+
+
+# --- Tag calendars (markers such as Oura tags) ---
+
+SUMMARY_UID_PREFIX = "oura-tag-summary-"
+TAG_COLUMNS = ["tag", "calendar", "date", "hour", "weekday", "all_day", "start"]
+
+
+def tag_occurrences(df):
+    """One row per tag event with its tag label, day, hour and weekday.
+
+    Monthly summary events from oura-tags-ical are dropped. All-day tags use
+    their UTC date (they're anchored at noon UTC, see calendar_store) and
+    have no hour. A multi-day all-day tag counts once, on its first day.
+    """
+    if df.empty:
+        return pd.DataFrame(columns=TAG_COLUMNS)
+    occ = df
+    if "uid" in occ:
+        occ = occ[~occ["uid"].astype(str).str.startswith(SUMMARY_UID_PREFIX)]
+    occ = occ.copy()
+    all_day = is_all_day(occ["start"], occ["end"])
+    utc_dates = occ["start"].dt.tz_convert("UTC").dt.date if occ["start"].dt.tz is not None else occ["start"].dt.date
+    occ["all_day"] = all_day
+    occ["date"] = utc_dates.where(all_day, occ["start"].dt.date)
+    occ["hour"] = occ["start"].dt.hour.where(~all_day)
+    occ["weekday"] = pd.to_datetime(occ["date"]).dt.day_name()
+    occ["tag"] = occ["event_name"].fillna("").astype(str).str.strip().replace("", "Untitled")
+    if "calendar" not in occ:
+        occ["calendar"] = ""
+    return occ[TAG_COLUMNS].reset_index(drop=True)
+
+
+def _longest_gap(dates, start_date, end_date):
+    """Longest run of days in [start_date, end_date] without any of `dates`."""
+    if end_date < start_date:
+        return 0
+    points = [start_date - timedelta(days=1)] + sorted(set(dates)) + [end_date + timedelta(days=1)]
+    return max((b - a).days - 1 for a, b in zip(points, points[1:]))
+
+
+def tag_summary(occ, start_date, end_date, today):
+    """Per-tag statistics for the inclusive date range.
+
+    `Days since last` is counted up to `today` over all data, so it reads as
+    the current streak without the tag (e.g. 12 alcohol-free days).
+    """
+    columns = ["Tag", "Total", "Avg / week", "Days with tag", "% of days",
+               "Last seen", "Days since last", "Longest gap (days)"]
+    in_range = occ[(occ["date"] >= start_date) & (occ["date"] <= end_date)]
+    if in_range.empty:
+        return pd.DataFrame(columns=columns)
+    days = (end_date - start_date).days + 1
+    gap_end = min(end_date, today)
+    past = occ[occ["date"] <= today]
+    rows = []
+    for tag, group in in_range.groupby("tag"):
+        seen = past.loc[past["tag"] == tag, "date"]
+        last = seen.max() if not seen.empty else None
+        rows.append({
+            "Tag": tag,
+            "Total": len(group),
+            "Avg / week": round(len(group) / (days / 7), 2),
+            "Days with tag": group["date"].nunique(),
+            "% of days": round(group["date"].nunique() / days * 100, 1),
+            "Last seen": last,
+            "Days since last": (today - last).days if last is not None else None,
+            "Longest gap (days)": _longest_gap(group["date"], start_date, gap_end),
+        })
+    return pd.DataFrame(rows, columns=columns).sort_values(["Total", "Tag"], ascending=[False, True]).reset_index(drop=True)
+
+
+def tag_counts_by_period(occ, period, start_date, end_date):
+    """Tag counts per day, week or month (zero-filled), one column per tag.
+
+    Indexed by the start date of each period.
+    """
+    in_range = occ[(occ["date"] >= start_date) & (occ["date"] <= end_date)]
+    if period == "day":
+        periods = [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
+        keys = in_range["date"]
+    else:
+        periods = []
+        ps = period_start(period, start_date)
+        while ps <= end_date:
+            periods.append(ps)
+            ps = next_period_start(period, ps)
+        keys = in_range["date"].map(lambda d: period_start(period, d))
+    if in_range.empty:
+        return pd.DataFrame(index=pd.Index(periods, name="period_start"))
+    counts = in_range.groupby([keys.rename("period_start"), "tag"]).size().unstack(fill_value=0)
+    return counts.reindex(periods, fill_value=0).rename_axis("period_start")

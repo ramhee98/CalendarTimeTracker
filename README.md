@@ -20,6 +20,7 @@
 - 📈 Trends page: visualize calendar activity over time using an interactive line chart
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
+- 🏷️ Tags page: counts, trends and weekday / time-of-day patterns for tag calendars such as Oura tags
 - ⚙️ Settings page: edit calendars, set counting and display defaults, and manage the event cache
 - 🌍 Time zone normalization support
 - ⚖️ **Data accuracy**: choose whether all-day / multi-day events count, and spot overlapping (double-counted) events
@@ -194,6 +195,18 @@ Get intelligent analysis of your calendar data with AI-powered insights.
 Upload `.ics` files and assign them to specific calendars configured via `calendars.json` or `calendars.txt`.
 
 ![Import Overview](img/import/import-overview.png)
+
+---
+
+### 🏷️ Tags
+
+Count markers from [tag calendars](#tag-calendars), such as Oura tags exported with [oura-tags-ical](https://github.com/ramhee98/oura-tags-ical) (☕ Coffee, 🍺 Beer, 🧖 Sauna).
+
+- **Summary per tag**: total, average per week, days with the tag and share of days, last seen, days since last (the current streak without it, e.g. 12 alcohol-free days) and the longest gap in the range, with CSV export
+- **Trend**: counts per day, week or month for the selected tags
+- **Weekday pattern**: which days a tag is logged on
+- **Time of day**: when timed tags happen (e.g. coffee after 14:00); all-day tags have no time and are left out
+- Monthly "📊 Tag Summary" events from oura-tags-ical are ignored, and a multi-day tag counts once, on its first day
 
 ---
 
