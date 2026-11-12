@@ -558,7 +558,7 @@ def show_weekday_hour_heatmap(df, start_date, end_date):
     # Use the start hour and weekday for the heatmap (simplification)
     heatmap_data = df.groupby(["weekday", "hour"])["duration_hours"].sum().unstack(fill_value=0)
     heatmap_data = heatmap_data.reindex(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-    st.dataframe(heatmap_data.style.background_gradient(cmap="YlOrRd"))
+    st.dataframe(heatmap_data.style.background_gradient(cmap="YlOrRd").format("{:.1f}"))
 
 def show_calendar_distribution_pie_chart(df, group_mode):
     group_label = group_mode.title()  # "Calendar" or "Category"
