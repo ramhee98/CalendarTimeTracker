@@ -1099,3 +1099,72 @@ def slots_to_ics(items, now=None):
                   "END:VEVENT"]
     lines.append("END:VCALENDAR")
     return "\r\n".join(lines) + "\r\n"
+
+
+# --- Focus & fragmentation ---
+
+def focus_day(lo, hi, busy, off, focus_minutes=90, short_minutes=30):
+    """How fragmented the awake time in [lo, hi) is.
+
+    `busy` = merged busy intervals (events), `off` = merged sleep and weekly
+    blocked times. Free time is awake time that isn't busy. Returns hours of
+    awake, busy, free, focus (free blocks of at least `focus_minutes`) and
+    fragmented free time, the longest free block, the number of short gaps
+    (free blocks under `short_minutes` between two events) and the free
+    blocks themselves as (start, end, "focus" | "fragment").
+    """
+    hours = lambda intervals: sum((b - a).total_seconds() for a, b in intervals) / 3600
+    awake = free_gaps(lo, hi, off)
+    gaps = free_gaps(lo, hi, merge_intervals(busy + off))
+    focus_span = pd.Timedelta(minutes=focus_minutes)
+    busy_ends = {e for _, e in busy}
+    busy_starts = {s for s, _ in busy}
+    short = [g for g in gaps if g[1] - g[0] < pd.Timedelta(minutes=short_minutes)
+             and g[0] in busy_ends and g[1] in busy_starts]
+    focus = [g for g in gaps if g[1] - g[0] >= focus_span]
+    free_h, awake_h = hours(gaps), hours(awake)
+    return {
+        "awake_h": awake_h,
+        "busy_h": awake_h - free_h,
+        "free_h": free_h,
+        "focus_h": hours(focus),
+        "fragmented_h": free_h - hours(focus),
+        "longest_h": max(((b - a).total_seconds() / 3600 for a, b in gaps), default=0.0),
+        "short_gaps": len(short),
+        "blocks": [(a, b, "focus" if b - a >= focus_span else "fragment") for a, b in gaps],
+    }
+
+
+def calendar_switches(events):
+    """How often consecutive timed events (sorted by start) belong to a
+    different calendar than the one before."""
+    if len(events) < 2:
+        return 0
+    cals = events.sort_values("start")["calendar"].tolist()
+    return sum(1 for a, b in zip(cals, cals[1:]) if a != b)
+
+
+def focus_by_day(events, first, last, tz, busy_for, off_for, rule_for, focus_minutes=90, short_minutes=30):
+    """One row of focus_day() metrics plus "switches" and "events" per day
+    from date `first` to `last` (inclusive)."""
+    timed = events[(events["end"] > events["start"]) & ~is_all_day(events["start"], events["end"])] \
+        if not events.empty else events
+    if not timed.empty:
+        timed = timed[timed["calendar"].map(rule_for).notna()]
+    rows = []
+    d = first
+    while d <= last:
+        lo, hi = local_midnight(d, tz), local_midnight(d + timedelta(days=1), tz)
+        off = off_for(lo, hi)
+        busy = merge_intervals([(max(a, lo), min(b, hi)) for a, b in busy_for(lo, hi)])
+        metrics = focus_day(lo, hi, busy, off, focus_minutes, short_minutes)
+        day_events = timed[(timed["start"] >= lo) & (timed["start"] < hi)] if not timed.empty else timed
+        if len(day_events) and off:
+            # Only events while awake count as switches (not a sleep calendar).
+            awake = free_gaps(lo, hi, off)
+            inside = day_events["start"].map(lambda s: any(a <= s < b for a, b in awake))
+            day_events = day_events[inside]
+        metrics.update({"date": d, "switches": calendar_switches(day_events), "events": len(day_events)})
+        rows.append(metrics)
+        d += timedelta(days=1)
+    return pd.DataFrame(rows)

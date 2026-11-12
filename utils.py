@@ -840,12 +840,11 @@ def sleep_pairs(settings, time_events=None, tag_events=None):
     )
 
 
-def slot_blocker(settings, now, time_events=None, tag_events=None):
-    """(blocked_for, sleep_nights_for) for the free-slot settings.
-
-    blocked_for(lo, hi) -> merged blocked intervals; sleep_nights_for(lo, hi)
-    -> (night, bed, wake, source) rows for display.
-    """
+def slot_parts(settings, now, time_events=None, tag_events=None, buffer_minutes=None):
+    """The pieces of blocked time for the free-slot settings, as functions
+    of (lo, hi): {"busy": events of blocking calendars (widened by the
+    buffer), "off": weekly blocked times + sleep, "nights": (night, bed,
+    wake, source) rows for display}. `buffer_minutes` overrides the setting."""
     from analysis import busy_intervals, merge_intervals, schedule_intervals, sleep_intervals
 
     time_events = load_raw_events("time") if time_events is None else time_events
@@ -853,10 +852,17 @@ def slot_blocker(settings, now, time_events=None, tag_events=None):
     if tag_events is None and needs_tags:
         tag_events = load_raw_events("tags")
     tz = now.tz
-    rule_for = slot_block_rule(settings)
+    base_rule = slot_block_rule(settings)
+    sleep_calendar = settings.get("slots_sleep_calendar") if settings.get("slots_sleep_mode") == "calendar" else None
+
+    def rule_for(calendar):
+        # The sleep calendar is sleep (with its wind-down), not busy time.
+        return None if sleep_calendar and calendar == sleep_calendar else base_rule(calendar)
+
     pairs = sleep_pairs(settings, time_events, tag_events)
     fixed_wake = settings.get("slots_wake_times") if (
         settings.get("slots_sleep_mode") == "markers" and settings.get("slots_wake_mode") == "fixed") else None
+    buffer = settings.get("slots_buffer_minutes", 0) if buffer_minutes is None else buffer_minutes
 
     def sleep_for(lo, hi):
         if settings.get("slots_sleep_mode", "none") == "none":
@@ -864,15 +870,26 @@ def slot_blocker(settings, now, time_events=None, tag_events=None):
         return sleep_intervals(pairs, lo, hi, tz, now, settings.get("slots_winddown_minutes", 0),
                                settings.get("slots_sleep_fallback", True), fixed_wake)
 
-    def blocked_for(lo, hi):
-        return merge_intervals(
-            busy_intervals(time_events, lo, hi, rule_for, settings.get("slots_all_day_blocks", False),
-                           settings.get("slots_buffer_minutes", 0))
-            + schedule_intervals(lo, hi, settings.get("slots_schedule", []), tz)
-            + sleep_for(lo, hi)[0]
-        )
+    return {
+        "busy": lambda lo, hi: busy_intervals(time_events, lo, hi, rule_for,
+                                              settings.get("slots_all_day_blocks", False), buffer),
+        "off": lambda lo, hi: merge_intervals(schedule_intervals(lo, hi, settings.get("slots_schedule", []), tz)
+                                              + sleep_for(lo, hi)[0]),
+        "nights": lambda lo, hi: sleep_for(lo, hi)[1],
+        "rule_for": rule_for,
+    }
 
-    return blocked_for, lambda lo, hi: sleep_for(lo, hi)[1]
+
+def slot_blocker(settings, now, time_events=None, tag_events=None):
+    """(blocked_for, sleep_nights_for) for the free-slot settings.
+
+    blocked_for(lo, hi) -> merged blocked intervals; sleep_nights_for(lo, hi)
+    -> (night, bed, wake, source) rows for display.
+    """
+    from analysis import merge_intervals
+
+    parts = slot_parts(settings, now, time_events, tag_events)
+    return (lambda lo, hi: merge_intervals(parts["busy"](lo, hi) + parts["off"](lo, hi))), parts["nights"]
 
 
 # --- Calendar health (Calendar Health page, banner) ---

@@ -21,6 +21,7 @@
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🏷️ Tags page: counts, trends and weekday / time-of-day patterns for tag calendars such as Oura tags
+- 🧩 Focus page: focus time, fragmentation, short gaps and calendar switches per day, with trends and a week timeline
 - 🩺 Calendar Health page: whether every calendar link still works, with history, warnings and a banner on every page when a calendar fails
 - ⚙️ Settings page: edit calendars, set counting, display and Tags page defaults, manage the event cache, and edit the config files as text
 - 🌍 Time zone normalization support
@@ -213,6 +214,18 @@ Count markers from [tag calendars](#tag-calendars), such as Oura tags exported w
 - Monthly "📊 Tag Summary" events from oura-tags-ical are ignored, and a multi-day tag counts once, on its first day
 - **🗂️ Tag groups**: combine tags, e.g. every coffee type into ☕ Coffee or 🍷 Wine and 🍺 Beer into Alcohol. Pick member tags and/or add keywords that match tag names exactly, ignoring case and the emoji (`Flat White` matches ☕️ Flat White but not ☕️ Decaf Flat White). A keyword that is just an emoji, like `☕`, matches every tag starting with it, including coffee types you log in the future. **💡 Suggest from emojis** creates one group per emoji shared by several tags. **🔤 Suggest from names** creates one group per word or phrase shared by several tag names (e.g. Decaf, Flat White), with the matching tag names as keywords. A tag may be in several groups (e.g. Coffee and Decaf) and counts in each. Show groups with the remaining single tags, groups only, or single tags only. Groups are stored in `tag_groups.json`
 - **Your defaults** (Settings → 🏷️ Tags): which tags or groups the charts start with (the N most frequent, 8 by default, or a fixed list), keeping your chart selection when you switch view or date range, the initial view and "Count per", a separate date range, preselected tag calendars, hidden tags, and merging tags that differ only in the emoji variant (☕ / ☕️)
+
+---
+
+### 🧩 Focus & Fragmentation
+
+How chopped up your days are, not just how full they are.
+
+- **Per day**: awake, busy and free hours, **focus time** (free blocks of at least 90 min, adjustable), fragmented free time, the longest free block, **short gaps** (under 30 min between two events) and **switches** between calendars
+- **Free time** follows Settings → 💡 Free slots: blocking calendars, busy/free events, weekly blocked times and sleep (no buffer), so nights and fixed blocks don't count as free
+- **Averages** compared with the previous period of the same length, **week by week** trends, and **which weekdays** are best for focus and most fragmented
+- **A week at a glance**: a timeline per day with busy events, focus blocks, fragments and sleep / blocked times
+- Filter by weekday, and export the day-by-day table as CSV
 
 ---
 
