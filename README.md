@@ -228,6 +228,7 @@ Manage the app from the browser: forms for the common settings, plus a raw text 
   - **Blocked every week**: fixed times per weekday, e.g. Mon 08:00–10:00 and 13:00–15:00, or for Weekdays, Weekend or Every day; a block ending before it starts runs past midnight (night 22:00–07:00)
   - **Sleep**: from a sleep calendar, or from events whose name contains e.g. "going to bed" (sleep start) and "waking up" (sleep end) or a fixed wake-up time per weekday. Optional time to do nothing before going to bed (e.g. 30 min). Nights without data (like future ones) use your usual sleep times of the last 4 weeks; sleeps under 3 hours count as naps
   - Shortest slot, buffer around events, suggestions per goal, and a preview of the blocked and free time of the next 7 days and the detected nights
+  - **📝 Edit as JSON**: all free-slot settings as raw JSON (the `slots_*` keys of `app_settings.json`), checked before saving: valid days and `HH:MM` times, known modes, numbers in range and no misspelled keys. The same checks apply when `app_settings.json` is edited in 📝 Raw files
 - **📝 Raw files**: edit `calendars.json`, `calendars.txt`, `app_settings.json`, `goals.json`, `tag_groups.json`, `social_analysis_settings.json` and `ai_config.json` as text. JSON is checked before saving, the previous version is kept as `<file>.bak` (and can be loaded back), and JSON can be reformatted. `.env` with the OpenAI key is not shown.
 
 ---

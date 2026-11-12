@@ -12,7 +12,7 @@ import tzlocal
 from analysis import DAY_GROUPS, WEEKDAY_ABBR, is_all_day, merge_tag_variants, tag_occurrences
 from calendar_store import decode_ics_response, get_cache_file_path, hash_url
 from utils import (
-    CALENDARS_JSON, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings,
+    CALENDARS_JSON, DEFAULT_APP_SETTINGS, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings,
     load_calendar_urls, load_tag_groups, normalize_calendar_name, normalize_time, read_calendars_config,
     save_app_settings, slot_blocker, write_calendars_config, write_file_with_backup,
 )
@@ -460,6 +460,67 @@ def hm(t):
     return t.strftime("%H:%M") if isinstance(t, time) else str(t)[:5]
 
 
+TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+SLOT_KEYS = [k for k in DEFAULT_APP_SETTINGS if k.startswith("slots_")]
+
+
+def slot_settings_problems(data):
+    """Problems with the free-slot keys ("slots_...") of `data`, [] if fine."""
+    problems = []
+    for key in data:
+        if key.startswith("slots_") and key not in DEFAULT_APP_SETTINGS:
+            problems.append(f'Unknown key "{key}". Known keys: {", ".join(SLOT_KEYS)}.')
+
+    def check(key, ok, expected):
+        if key in data and not ok(data[key]):
+            problems.append(f'"{key}" must be {expected}, not {json.dumps(data[key], ensure_ascii=False)}.')
+
+    is_time = lambda v: isinstance(v, str) and bool(TIME_RE.match(v))
+    is_int = lambda lo, hi: (lambda v: isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi)
+    for key in ("slots_free_blocks", "slots_new_calendars_block", "slots_all_day_blocks", "slots_sleep_fallback"):
+        check(key, lambda v: isinstance(v, bool), "true or false")
+    for key in ("slots_sleep_calendar", "slots_marker_calendar", "slots_bed_text", "slots_wake_text"):
+        check(key, lambda v: isinstance(v, str), "a text")
+    check("slots_blocking_mode", lambda v: v in ("all", "custom"), '"all" or "custom"')
+    check("slots_sleep_mode", lambda v: v in ("none", "calendar", "markers"), '"none", "calendar" or "markers"')
+    check("slots_wake_mode", lambda v: v in ("event", "fixed"), '"event" or "fixed"')
+    check("slots_winddown_minutes", is_int(0, 240), "a whole number from 0 to 240")
+    check("slots_min_minutes", is_int(5, 480), "a whole number from 5 to 480")
+    check("slots_buffer_minutes", is_int(0, 240), "a whole number from 0 to 240")
+    check("slots_max_per_goal", is_int(1, 20), "a whole number from 1 to 20")
+    check("slots_calendars", lambda v: isinstance(v, dict) and all(
+        isinstance(c, dict) and set(c) <= {"block", "free"} and all(isinstance(x, bool) for x in c.values())
+        for c in v.values()), '{"Calendar name": {"block": true, "free": false}, ...}')
+    check("slots_wake_times", lambda v: isinstance(v, dict) and all(
+        d in WEEKDAY_ABBR and is_time(t) for d, t in v.items()), '{"Mon": "07:00", ...} with times as HH:MM')
+    if "slots_schedule" in data:
+        rows = data["slots_schedule"]
+        if not isinstance(rows, list):
+            problems.append('"slots_schedule" must be a list of {"day", "from", "to", "label"}.')
+        else:
+            for i, row in enumerate(rows, start=1):
+                if not isinstance(row, dict):
+                    problems.append(f"slots_schedule row {i} must be an object.")
+                    continue
+                if row.get("day") not in SCHEDULE_DAYS:
+                    problems.append(f'slots_schedule row {i}: "day" must be one of {", ".join(SCHEDULE_DAYS)}.')
+                for key in ("from", "to"):
+                    if not is_time(row.get(key)):
+                        problems.append(f'slots_schedule row {i}: "{key}" must be a time like "08:00".')
+                if row.get("from") == row.get("to") and is_time(row.get("from")):
+                    problems.append(f"slots_schedule row {i}: from and to are equal (would block 24 hours).")
+                extra = set(row) - {"day", "from", "to", "label"}
+                if extra:
+                    problems.append(f"slots_schedule row {i}: unknown key(s) {', '.join(sorted(extra))}.")
+    return problems
+
+
+def reset_slot_widgets():
+    """Forget the free-slot widgets' values so they show the saved file."""
+    for key in [k for k in st.session_state if str(k).startswith("slots_")]:
+        del st.session_state[key]
+
+
 def render_slots_tab():
     settings = load_app_settings()
     calendars, _ = load_calendar_urls()
@@ -670,6 +731,46 @@ def render_slots_tab():
             flash("Saved the free-slot settings.")
             st.rerun()
 
+    with st.expander("📝 Edit as JSON"):
+        st.caption(
+            "The saved free-slot settings (in `app_settings.json`). Edits here replace the form above "
+            "when saved; unsaved changes in the form are discarded. Missing keys use their defaults."
+        )
+        saved_text = json.dumps({k: settings[k] for k in SLOT_KEYS}, indent=2, ensure_ascii=False)
+        version = st.session_state.setdefault("raw_slots_version", 0)
+        text = st.text_area("Free-slot settings", saved_text, height=420, key=f"raw_slots_{version}",
+                            label_visibility="collapsed")
+        problems, data = [], None
+        if text != saved_text:
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as e:
+                problems = [f"Invalid JSON at line {e.lineno}, column {e.colno}: {e.msg}."]
+            else:
+                if not isinstance(data, dict):
+                    problems = ["The JSON must be an object ({ ... })."]
+                else:
+                    problems = slot_settings_problems(data)
+                    other = [k for k in data if not k.startswith("slots_")]
+                    if other:
+                        problems.append(f"Only free-slot keys belong here, not: {', '.join(other)}. "
+                                        "Edit other settings in 📝 Raw files.")
+            for p in problems:
+                st.error(p)
+        c1, c2 = st.columns(2)
+        if c1.button("💾 Save JSON", disabled=text == saved_text or bool(problems), use_container_width=True):
+            # Keep every other setting; free-slot keys left out fall back to their defaults.
+            merged = {k: v for k, v in load_app_settings().items() if not k.startswith("slots_")}
+            merged.update(data)
+            save_app_settings(merged)
+            reset_slot_widgets()
+            st.session_state.raw_slots_version = version + 1
+            flash("Saved the free-slot settings from JSON.")
+            st.rerun()
+        if c2.button("↩️ Discard JSON changes", disabled=text == saved_text, use_container_width=True):
+            st.session_state.raw_slots_version = version + 1
+            st.rerun()
+
 
 with tab_slots:
     render_slots_tab()
@@ -858,6 +959,10 @@ def validate_config(name, text):
         for i, c in enumerate(data.get("calendars", []), start=1):
             if not isinstance(c, dict) or not str(c.get("url", "")).strip():
                 return f"Calendar {i} needs a \"url\"."
+    if name == "app_settings.json":
+        problems = slot_settings_problems(data)
+        if problems:
+            return " ".join(problems)
     return None
 
 
@@ -897,6 +1002,8 @@ def render_raw_tab():
         write_file_with_backup(name, text if text.endswith("\n") else text + "\n")
         for key in CONFIG_FILES[name][2]:
             st.session_state.pop(key, None)
+        if name == "app_settings.json":
+            reset_slot_widgets()
         st.cache_data.clear()
         st.session_state.raw_version += 1
         flash(f"Saved {name}" + (f" (previous version kept as {name}.bak)." if exists else "."))
