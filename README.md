@@ -136,6 +136,8 @@ Set targets and see whether you're living the week you intended.
 - **💡 Suggested slots**: for every calendar or category goal with a Min that isn't covered by booked events, free slots in the rest of this day/week/month (or the next one) that would close the gap. Slots prefer the weekdays and hours you usually spend on that goal, are spread over different days, and can be downloaded as `.ics` to import into your calendar app. What counts as busy is set in Settings → 💡 Free slots
 - **Editable in the app**: pick from one list where every entry shows whether it is a 📅 calendar, 🗂️ category, 🏷️ tag or 🔖 tag group, so targets with the same name can't be mixed up. Goals are stored in `goals.json`
 
+![Goals with suggested slots](img/goals/goals-overview.png)
+
 ---
 
 ### 🗓️ Weekly Review
@@ -149,6 +151,8 @@ A one-screen weekly ritual instead of comparing four pages by eye.
 - **Day by day**: stacked hours per day
 - **Next week**: hours already booked compared with a typical week
 - **Markdown export**: download the review (aggregates only, no event titles)
+
+![Weekly Review](img/weekly-review/weekly-review-overview.png)
 
 ---
 
@@ -215,6 +219,8 @@ Count markers from [tag calendars](#tag-calendars), such as Oura tags exported w
 - **🗂️ Tag groups**: combine tags, e.g. every coffee type into ☕ Coffee or 🍷 Wine and 🍺 Beer into Alcohol. Pick member tags and/or add keywords that match tag names exactly, ignoring case and the emoji (`Flat White` matches ☕️ Flat White but not ☕️ Decaf Flat White). A keyword that is just an emoji, like `☕`, matches every tag starting with it, including coffee types you log in the future. **💡 Suggest from emojis** creates one group per emoji shared by several tags. **🔤 Suggest from names** creates one group per word or phrase shared by several tag names (e.g. Decaf, Flat White), with the matching tag names as keywords. A tag may be in several groups (e.g. Coffee and Decaf) and counts in each. Show groups with the remaining single tags, groups only, or single tags only. Groups are stored in `tag_groups.json`
 - **Your defaults** (Settings → 🏷️ Tags): which tags or groups the charts start with (the N most frequent, 8 by default, or a fixed list), keeping your chart selection when you switch view or date range, the initial view and "Count per", a separate date range, preselected tag calendars, hidden tags, and merging tags that differ only in the emoji variant (☕ / ☕️)
 
+![Tags](img/tags/tags-overview.png)
+
 ---
 
 ### 🧩 Focus & Fragmentation
@@ -226,6 +232,8 @@ How chopped up your days are, not just how full they are.
 - **Averages** compared with the previous period of the same length, **week by week** trends, and **which weekdays** are best for focus and most fragmented
 - **A week at a glance**: a timeline per day with busy events, focus blocks, fragments and sleep / blocked times
 - Filter by weekday, and export the day-by-day table as CSV
+
+![Focus & Fragmentation](img/focus/focus-overview.png)
 
 ---
 
@@ -240,6 +248,8 @@ See whether your calendar links still work, before missing events show up in you
 - **Banner**: every page shows a warning when a calendar is failing
 - **Private**: URLs are stored and shown shortened, without the secret part (`https://calendar.google.com/…/basic.ics`). The checks are kept in `sync_health.json` (last 200 per calendar)
 - Thresholds (failures before 🔴, event drop %, days without changes, slow fetch, hours without a check) and the banner are set in Settings → 💾 Cache & sync
+
+![Calendar Health](img/health/health-overview.png)
 
 ---
 
@@ -258,6 +268,10 @@ Manage the app from the browser: forms for the common settings, plus a raw text 
   - Shortest slot, buffer around events, suggestions per goal, and a preview of the blocked and free time of the next 7 days and the detected nights
   - When `app_settings.json` is edited in 📝 Raw files, the free-slot keys (`slots_*`) are checked before saving: valid days and `HH:MM` times, known modes, numbers in range and no misspelled keys
 - **📝 Raw files**: edit `calendars.json`, `calendars.txt`, `app_settings.json`, `goals.json`, `tag_groups.json`, `social_analysis_settings.json` and `ai_config.json` as text. JSON is checked before saving, the previous version is kept as `<file>.bak` (and can be loaded back), and JSON can be reformatted. `.env` with the OpenAI key is not shown.
+
+![Settings: calendars](img/settings/settings-overview.png)
+
+![Settings: free slots](img/settings/settings-free-slots.png)
 
 ---
 
