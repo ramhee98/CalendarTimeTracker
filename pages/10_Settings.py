@@ -731,46 +731,6 @@ def render_slots_tab():
             flash("Saved the free-slot settings.")
             st.rerun()
 
-    with st.expander("📝 Edit as JSON"):
-        st.caption(
-            "The saved free-slot settings (in `app_settings.json`). Edits here replace the form above "
-            "when saved; unsaved changes in the form are discarded. Missing keys use their defaults."
-        )
-        saved_text = json.dumps({k: settings[k] for k in SLOT_KEYS}, indent=2, ensure_ascii=False)
-        version = st.session_state.setdefault("raw_slots_version", 0)
-        text = st.text_area("Free-slot settings", saved_text, height=420, key=f"raw_slots_{version}",
-                            label_visibility="collapsed")
-        problems, data = [], None
-        if text != saved_text:
-            try:
-                data = json.loads(text)
-            except json.JSONDecodeError as e:
-                problems = [f"Invalid JSON at line {e.lineno}, column {e.colno}: {e.msg}."]
-            else:
-                if not isinstance(data, dict):
-                    problems = ["The JSON must be an object ({ ... })."]
-                else:
-                    problems = slot_settings_problems(data)
-                    other = [k for k in data if not k.startswith("slots_")]
-                    if other:
-                        problems.append(f"Only free-slot keys belong here, not: {', '.join(other)}. "
-                                        "Edit other settings in 📝 Raw files.")
-            for p in problems:
-                st.error(p)
-        c1, c2 = st.columns(2)
-        if c1.button("💾 Save JSON", disabled=text == saved_text or bool(problems), use_container_width=True):
-            # Keep every other setting; free-slot keys left out fall back to their defaults.
-            merged = {k: v for k, v in load_app_settings().items() if not k.startswith("slots_")}
-            merged.update(data)
-            save_app_settings(merged)
-            reset_slot_widgets()
-            st.session_state.raw_slots_version = version + 1
-            flash("Saved the free-slot settings from JSON.")
-            st.rerun()
-        if c2.button("↩️ Discard JSON changes", disabled=text == saved_text, use_container_width=True):
-            st.session_state.raw_slots_version = version + 1
-            st.rerun()
-
 
 with tab_slots:
     render_slots_tab()
