@@ -403,6 +403,38 @@ DEFAULT_APP_SETTINGS = {
     # shows ("page": time calendars on time pages, tag calendars on Tags).
     # Home always syncs all.
     "sync_scope": "all",
+
+    # --- Free-slot suggestions (Goals page) ---
+    # "all": every time calendar blocks (also ones added later); events
+    # marked as free only block with slots_free_blocks.
+    # "custom": per calendar in slots_calendars ({name: {"block", "free"}});
+    # calendars not listed there (added later) follow slots_new_calendars_block.
+    "slots_blocking_mode": "all",
+    "slots_free_blocks": False,
+    "slots_calendars": {},
+    "slots_new_calendars_block": True,
+    # All-day events (trips, holidays) block the whole day.
+    "slots_all_day_blocks": False,
+    # Blocked every week; day = Mon..Sun, "Weekdays", "Weekend" or "Every
+    # day"; a block whose "to" isn't after "from" runs past midnight.
+    "slots_schedule": [{"day": "Every day", "from": "22:00", "to": "07:00", "label": "Night"}],
+    # Sleep: "none", "calendar" (events of slots_sleep_calendar) or
+    # "markers" (events containing slots_bed_text, ended by slots_wake_text
+    # or the fixed slots_wake_times).
+    "slots_sleep_mode": "none",
+    "slots_sleep_calendar": "",
+    "slots_marker_calendar": "",  # "" = any calendar
+    "slots_bed_text": "going to bed",
+    "slots_wake_mode": "event",  # "event" or "fixed"
+    "slots_wake_text": "waking up",
+    "slots_wake_times": {d: "07:00" for d in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")},
+    # Blocked before going to bed (time to do nothing).
+    "slots_winddown_minutes": 30,
+    # Nights without sleep data use the usual times of the last 4 weeks.
+    "slots_sleep_fallback": True,
+    "slots_min_minutes": 30,
+    "slots_buffer_minutes": 15,
+    "slots_max_per_goal": 3,
 }
 
 
@@ -731,3 +763,97 @@ def save_tag_groups(groups):
     with open(TAG_GROUPS_FILE, "w", encoding="utf-8") as f:
         json.dump({"groups": [g for g in (_clean_group(g) for g in groups) if g]},
                   f, indent=2, ensure_ascii=False)
+
+
+# --- Free-slot suggestions (Goals page, Settings) ---
+
+def load_raw_events(kind="time"):
+    """Events of `kind` from the cache with local times and display calendar
+    names, without the data-accuracy rules (long and free events kept)."""
+    events, _ = load_all_events_from_cache(kind)
+    if not events:
+        return pd.DataFrame(columns=["calendar", "event_name", "start", "end", "free"])
+    df = pd.DataFrame(events)
+    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
+    return normalize_time(df, tz="local")
+
+
+def slot_block_rule(settings):
+    """Function calendar name -> None (doesn't block), "busy" (only events
+    marked busy) or "all" (events marked as free block too)."""
+    if settings.get("slots_blocking_mode", "all") != "custom":
+        rule = "all" if settings.get("slots_free_blocks") else "busy"
+        return lambda calendar: rule
+    per_calendar = settings.get("slots_calendars", {})
+    new_rule = "busy" if settings.get("slots_new_calendars_block", True) else None
+
+    def rule_for(calendar):
+        cfg = per_calendar.get(calendar)
+        if cfg is None:
+            return new_rule
+        if not cfg.get("block"):
+            return None
+        return "all" if cfg.get("free") else "busy"
+    return rule_for
+
+
+def sleep_pairs(settings, time_events=None, tag_events=None):
+    """(bed, wake) pairs from the configured sleep source, [] if none."""
+    from analysis import sleep_from_calendar, sleep_from_markers
+
+    mode = settings.get("slots_sleep_mode", "none")
+    if mode not in ("calendar", "markers"):
+        return []
+    frames = [f for f in (time_events, tag_events) if f is not None and not f.empty]
+    if not frames:
+        return []
+    events = pd.concat([f[["calendar", "event_name", "start", "end"]] for f in frames], ignore_index=True)
+    if mode == "calendar":
+        return sleep_from_calendar(events[events["calendar"] == settings.get("slots_sleep_calendar")])
+    marker_calendar = settings.get("slots_marker_calendar") or ""
+    if marker_calendar:
+        events = events[events["calendar"] == marker_calendar]
+    fixed = settings.get("slots_wake_mode") == "fixed"
+    return sleep_from_markers(
+        events,
+        settings.get("slots_bed_text", ""),
+        wake_text=None if fixed else settings.get("slots_wake_text"),
+        wake_times=settings.get("slots_wake_times") if fixed else None,
+        tz=events["start"].dt.tz,
+    )
+
+
+def slot_blocker(settings, now, time_events=None, tag_events=None):
+    """(blocked_for, sleep_nights_for) for the free-slot settings.
+
+    blocked_for(lo, hi) -> merged blocked intervals; sleep_nights_for(lo, hi)
+    -> (night, bed, wake, source) rows for display.
+    """
+    from analysis import busy_intervals, merge_intervals, schedule_intervals, sleep_intervals
+
+    time_events = load_raw_events("time") if time_events is None else time_events
+    needs_tags = settings.get("slots_sleep_mode") in ("calendar", "markers")
+    if tag_events is None and needs_tags:
+        tag_events = load_raw_events("tags")
+    tz = now.tz
+    rule_for = slot_block_rule(settings)
+    pairs = sleep_pairs(settings, time_events, tag_events)
+    fixed_wake = settings.get("slots_wake_times") if (
+        settings.get("slots_sleep_mode") == "markers" and settings.get("slots_wake_mode") == "fixed") else None
+
+    def sleep_for(lo, hi):
+        if settings.get("slots_sleep_mode", "none") == "none":
+            return [], []
+        return sleep_intervals(pairs, lo, hi, tz, now, settings.get("slots_winddown_minutes", 0),
+                               settings.get("slots_sleep_fallback", True), fixed_wake)
+
+    def blocked_for(lo, hi):
+        return merge_intervals(
+            busy_intervals(time_events, lo, hi, rule_for, settings.get("slots_all_day_blocks", False),
+                           settings.get("slots_buffer_minutes", 0))
+            + schedule_intervals(lo, hi, settings.get("slots_schedule", []), tz)
+            + sleep_for(lo, hi)[0]
+        )
+
+    return blocked_for, lambda lo, hi: sleep_for(lo, hi)[1]
+

@@ -713,3 +713,389 @@ def default_chart_labels(by_count, mode="top", top_n=8, fixed=(), fill=True):
         rest = [label for label in by_count if label not in picked]
         picked += rest[:max(0, len(fixed) - len(picked))]
     return picked
+
+
+# --- Free-slot suggestions for goals ---
+#
+# Blocked time = events of blocking calendars (busy only, or also events
+# marked as free, per calendar) + fixed weekly blocked times + sleep (from a
+# sleep calendar or from "going to bed" / "waking up" events). Suggestions
+# fill the free gaps that remain, preferring the weekdays and hours the goal
+# usually happens at.
+
+WEEKDAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+DAY_GROUPS = {
+    "Every day": WEEKDAY_ABBR,
+    "Weekdays": WEEKDAY_ABBR[:5],
+    "Weekend": WEEKDAY_ABBR[5:],
+}
+
+
+def schedule_days(day):
+    """Weekday abbreviations of a schedule row's day ("Mon", "Weekdays", ...)."""
+    return DAY_GROUPS.get(day, [day] if day in WEEKDAY_ABBR else [])
+
+
+def _minutes(text):
+    """Minutes after midnight of "HH:MM"."""
+    h, m = str(text).split(":")[:2]
+    return int(h) * 60 + int(m)
+
+
+def _local_time(d, minutes, tz):
+    """Timestamp `minutes` after midnight of date `d` in `tz` (DST-safe)."""
+    ts = pd.Timestamp(d) + pd.Timedelta(minutes=minutes)
+    return ts.tz_localize(tz, nonexistent="shift_forward", ambiguous=False) if tz is not None else ts
+
+
+def merge_intervals(intervals):
+    """Sorted, merged (start, end) intervals; touching ones join."""
+    merged = []
+    for s, e in sorted(i for i in intervals if i[1] > i[0]):
+        if merged and s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def schedule_intervals(lo, hi, rows, tz):
+    """Intervals of the weekly blocked times overlapping [lo, hi).
+
+    A row is {"day": "Mon" | "Weekdays" | "Weekend" | "Every day",
+    "from": "08:00", "to": "10:00"}. When "to" is not after "from" the block
+    runs past midnight and belongs to the day it starts on (22:00-07:00).
+    """
+    out = []
+    d = (lo - DAY).date()
+    while d <= hi.date():
+        for row in rows:
+            if WEEKDAY_ABBR[d.weekday()] not in schedule_days(row.get("day")):
+                continue
+            f, t = _minutes(row["from"]), _minutes(row["to"])
+            start = _local_time(d, f, tz)
+            end = _local_time(d + timedelta(days=1), t, tz) if t <= f else _local_time(d, t, tz)
+            if end > lo and start < hi:
+                out.append((max(start, lo), min(end, hi)))
+        d += timedelta(days=1)
+    return out
+
+
+def _is_free(values):
+    return values.map(lambda v: str(v).strip().lower() == "true")
+
+
+def busy_intervals(df, lo, hi, rule_for, all_day_blocks=False, buffer_minutes=0):
+    """Merged busy time in [lo, hi).
+
+    `rule_for(calendar)` returns None (calendar doesn't block), "busy" (only
+    events marked busy block) or "all" (events marked as free block too).
+    All-day events only block with `all_day_blocks`; zero-length events never
+    do. Each interval is widened by `buffer_minutes` on both sides.
+    """
+    if df.empty:
+        return []
+    sub = df[(df["start"] < hi) & (df["end"] > lo) & (df["end"] > df["start"])]
+    if sub.empty:
+        return []
+    rules = sub["calendar"].map(rule_for)
+    free = _is_free(sub["free"]) if "free" in sub else pd.Series(False, index=sub.index)
+    keep = rules.notna() & ((rules == "all") | ~free)
+    if not all_day_blocks:
+        keep &= ~is_all_day(sub["start"], sub["end"])
+    sub = sub[keep]
+    buf = pd.Timedelta(minutes=buffer_minutes)
+    return merge_intervals([(s - buf, e + buf) for s, e in zip(sub["start"], sub["end"])])
+
+
+def free_gaps(lo, hi, blocked):
+    """Gaps in [lo, hi) not covered by the merged `blocked` intervals."""
+    gaps, cursor = [], lo
+    for s, e in blocked:
+        if e <= cursor:
+            continue
+        if s >= hi:
+            break
+        if s > cursor:
+            gaps.append((cursor, min(s, hi)))
+        cursor = max(cursor, e)
+    if cursor < hi:
+        gaps.append((cursor, hi))
+    return gaps
+
+
+# --- Sleep ---
+
+def _contains(names, text):
+    text = str(text or "").strip().casefold()
+    if not text:
+        return pd.Series(False, index=names.index)
+    return names.fillna("").astype(str).str.casefold().str.contains(text, regex=False)
+
+
+def _next_wake_time(bed, wake_times, tz):
+    """First fixed wake-up time ({"Mon": "07:00", ...}) after `bed`."""
+    for days in range(0, 3):
+        d = (bed + pd.Timedelta(days=days)).date()
+        text = (wake_times or {}).get(WEEKDAY_ABBR[d.weekday()])
+        if not text:
+            continue
+        wake = _local_time(d, _minutes(text), tz)
+        if wake > bed:
+            return wake
+    return None
+
+
+def sleep_from_markers(events, bed_text, wake_text=None, wake_times=None, tz=None, max_hours=16, default_hours=8):
+    """(bed, wake) pairs from "going to bed" events, ended by the next
+    "waking up" event within `max_hours`, else the next fixed wake-up time
+    of that day (`wake_times`), else `default_hours` later."""
+    if events.empty:
+        return []
+    names = events["event_name"]
+    beds = events.loc[_contains(names, bed_text), "start"].sort_values()
+    wakes = events.loc[_contains(names, wake_text), "start"].sort_values() if wake_text else pd.Series(dtype=object)
+    wake_list = list(wakes)
+    pairs = []
+    for bed in beds:
+        wake = next((w for w in wake_list if bed < w <= bed + pd.Timedelta(hours=max_hours)), None)
+        if wake is None and wake_times:
+            wake = _next_wake_time(bed, wake_times, tz)
+        if wake is None:
+            wake = bed + pd.Timedelta(hours=default_hours)
+        pairs.append((bed, wake))
+    return pairs
+
+
+def sleep_from_calendar(events):
+    """(start, end) of every timed event of a sleep calendar."""
+    if events.empty:
+        return []
+    sub = events[(events["end"] > events["start"]) & ~is_all_day(events["start"], events["end"])]
+    return sorted(zip(sub["start"], sub["end"]))
+
+
+def _night_of(ts):
+    """The date of the evening a sleep belongs to (before noon = night before)."""
+    return (ts - pd.Timedelta(hours=12)).date()
+
+
+NIGHT_MIN_HOURS = 3  # shorter sleeps are naps: they block, but aren't the night
+
+
+def _is_night(bed, wake):
+    return wake - bed >= pd.Timedelta(hours=NIGHT_MIN_HOURS)
+
+
+def usual_sleep(pairs, now, days=28):
+    """Median bedtime (minutes after noon) and sleep length (minutes) per
+    weekday of the evening, from the nights (not naps) of the last `days`;
+    weekdays without data use the median over all days. {} without data."""
+    recent = [(b, w) for b, w in pairs if now - pd.Timedelta(days=days) <= b < now and _is_night(b, w)]
+    if not recent:
+        return {}
+    rows = pd.DataFrame({
+        "weekday": [_night_of(b).weekday() for b, _ in recent],
+        "bed": [((b - pd.Timedelta(hours=12)).hour * 60 + b.minute) for b, _ in recent],
+        "length": [(w - b).total_seconds() / 60 for b, w in recent],
+    })
+    overall = (rows["bed"].median(), rows["length"].median())
+    by_day = rows.groupby("weekday")[["bed", "length"]].median()
+    return {wd: (by_day.loc[wd, "bed"], by_day.loc[wd, "length"]) if wd in by_day.index else overall
+            for wd in range(7)}
+
+
+def sleep_intervals(pairs, lo, hi, tz, now, winddown_minutes=0, fallback=True, wake_times=None):
+    """Blocked sleep time in [lo, hi): every (bed, wake) pair, starting
+    `winddown_minutes` before bed. With `fallback`, nights without data use
+    the usual bedtime and length of that weekday (`usual_sleep`), ending at
+    the fixed wake-up time instead if `wake_times` has one.
+
+    Returns (intervals, nights) where nights lists (night date, bed, wake,
+    source) for display; source is "event" or "usual".
+    """
+    winddown = pd.Timedelta(minutes=winddown_minutes)
+    sleeps = [(_night_of(b), b, w, "event") for b, w in pairs
+              if w + winddown > lo - DAY and b - winddown < hi + DAY]
+    covered = {d for d, b, w, _ in sleeps if _is_night(b, w)}
+    usual = usual_sleep(pairs, now) if fallback else {}
+    if usual:
+        d = (lo - DAY).date()
+        while d <= hi.date():
+            if d not in covered:
+                bed_min, length = usual[d.weekday()]
+                bed = _local_time(d, 12 * 60 + bed_min, tz)
+                wake = _next_wake_time(bed, wake_times, tz) if wake_times else None
+                if wake is None or wake - bed > pd.Timedelta(hours=16):
+                    wake = bed + pd.Timedelta(minutes=length)
+                sleeps.append((d, bed, wake, "usual"))
+            d += timedelta(days=1)
+    intervals = [(max(bed - winddown, lo), min(wake, hi)) for _, bed, wake, _ in sleeps
+                 if wake > lo and bed - winddown < hi]
+    return merge_intervals(intervals), sorted(sleeps)
+
+
+# --- Goal preferences and slot picking ---
+
+def goal_time_preferences(df, goal, now, weeks=26):
+    """When a time goal's events usually happen: counts per weekday, hour and
+    (weekday, hour) over the last `weeks`, plus the median session length."""
+    sub = goal_events(df, goal)
+    sub = sub[(sub["start"] < now) & (sub["start"] >= now - pd.Timedelta(weeks=weeks))]
+    if not sub.empty:
+        sub = sub[~is_all_day(sub["start"], sub["end"]) & (sub["end"] > sub["start"])]
+    minutes = (sub["end"] - sub["start"]).dt.total_seconds() / 60
+    return {
+        "n": len(sub),
+        "weekday": sub["start"].dt.weekday.value_counts().to_dict(),
+        "hour": sub["start"].dt.hour.value_counts().to_dict(),
+        "both": sub.groupby([sub["start"].dt.weekday, sub["start"].dt.hour]).size().to_dict(),
+        "session_minutes": float(minutes.median()) if len(sub) else None,
+    }
+
+
+def _near(counts, key, hour):
+    return sum(counts.get(key(h), 0) for h in (hour - 1, hour, hour + 1))
+
+
+def _slot_score(start, prefs):
+    """Higher when the goal usually happens on this weekday around this hour."""
+    n = prefs["n"]
+    if not n:
+        # No history: prefer daytime over the first free minute after waking.
+        return 0.05 if 9 <= start.hour < 21 else 0.0
+    wd, h = start.weekday(), start.hour
+    both = _near(prefs["both"], lambda x: (wd, x), h)
+    hour = _near(prefs["hour"], lambda x: x, h)
+    return (3 * both + hour + prefs["weekday"].get(wd, 0)) / n
+
+
+def _slot_reason(start, prefs):
+    n = prefs["n"]
+    if not n:
+        return "Free (no history for this goal yet)"
+    wd, h = start.weekday(), start.hour
+    reasons = []
+    if prefs["weekday"].get(wd, 0) / n >= 0.2:
+        reasons.append(f"you often do this on {start.day_name()}s")
+    if _near(prefs["hour"], lambda x: x, h) / n >= 0.2:
+        reasons.append(f"usually around {h:02d}:00")
+    return ("Free, " + " and ".join(reasons)) if reasons else "Free"
+
+
+def _round_up(ts, step_minutes):
+    floored = ts.floor(f"{step_minutes}min", nonexistent="shift_forward", ambiguous=False)
+    return floored if floored == ts else floored + pd.Timedelta(minutes=step_minutes)
+
+
+def _subtract(gaps, start, end):
+    """`gaps` without [start, end)."""
+    out = []
+    for gs, ge in gaps:
+        if end <= gs or start >= ge:
+            out.append((gs, ge))
+            continue
+        if gs < start:
+            out.append((gs, start))
+        if end < ge:
+            out.append((end, ge))
+    return out
+
+
+def suggest_slots(gaps, need_minutes, session_minutes, prefs, max_slots=3, min_minutes=30, step=15):
+    """Up to `max_slots` non-overlapping slots in `gaps` covering
+    `need_minutes`, preferring the goal's usual weekdays and hours and
+    different days. Returns (slots, minutes still uncovered)."""
+    slots, remaining = [], need_minutes
+    while remaining > 1e-6 and len(slots) < max_slots:
+        length = min(session_minutes, remaining)
+        length = max(min_minutes, int(-(-length // step) * step))  # round up to the step
+        span = pd.Timedelta(minutes=length)
+        used_days = {s["start"].date() for s in slots}
+        best = None
+        for gs, ge in gaps:
+            t = _round_up(gs, step)
+            while t + span <= ge:
+                score = _slot_score(t, prefs) - (10 if t.date() in used_days else 0)
+                if best is None or score > best[0] + 1e-9:
+                    best = (score, t)
+                t += pd.Timedelta(minutes=step)
+        if best is None:
+            break
+        start = best[1]
+        slots.append({"start": start, "end": start + span, "minutes": length, "reason": _slot_reason(start, prefs)})
+        remaining -= length
+        gaps = _subtract(gaps, start, start + span)
+    return slots, max(0.0, remaining)
+
+
+def suggest_goal_slots(goal_df, goals, now, blocked_for, plan="current", min_minutes=30,
+                       buffer_minutes=15, max_slots=3, step=15):
+    """Free-slot suggestions for every time goal with a minimum it won't
+    reach in the period.
+
+    `goal_df` = events counted towards goals (as on the Goals page).
+    `blocked_for(lo, hi)` returns the merged blocked intervals in [lo, hi).
+    `plan` is "current" (rest of this day/week/month) or "next". Slots picked
+    for one goal are no longer free for the following goals.
+    """
+    tz = goal_df["start"].dt.tz if not goal_df.empty else now.tz
+    start_at = _round_up(now, step)
+    buf = pd.Timedelta(minutes=buffer_minutes)
+    taken, plans = [], []
+    for goal in goals:
+        if is_tag_goal(goal) or goal.get("min") is None:
+            continue
+        period = goal.get("period", "week")
+        cur = period_start(period, now.date())
+        if plan == "next":
+            cur = next_period_start(period, cur)
+        nxt = next_period_start(period, cur)
+        p_lo, hi = local_midnight(cur, tz), local_midnight(nxt, tz)
+        lo = max(p_lo, start_at)
+        booked = goal_amount(goal, goal_events(goal_df, goal), cur, nxt, tz=tz)
+        need = goal["min"] - booked
+        if need <= 1e-6:
+            continue
+        gaps = []
+        if lo < hi:
+            blocked = merge_intervals(blocked_for(lo, hi) + [(s - buf, e + buf) for s, e in taken])
+            gaps = [g for g in free_gaps(lo, hi, blocked) if g[1] - g[0] >= pd.Timedelta(minutes=min_minutes)]
+        prefs = goal_time_preferences(goal_df, goal, now)
+        session = prefs["session_minutes"] or 60
+        session = min(120, max(min_minutes, round(session / step) * step))
+        slots, missing = suggest_slots(gaps, need * 60, session, prefs, max_slots, min_minutes, step)
+        taken += [(s["start"], s["end"]) for s in slots]
+        plans.append({
+            "goal": goal,
+            "period_start": cur,
+            "booked": booked,
+            "need_hours": need,
+            "slots": slots,
+            "missing_hours": missing / 60,
+            "free_hours": sum((b - a).total_seconds() for a, b in gaps) / 3600,
+        })
+    return plans
+
+
+def _ics_text(text):
+    return str(text).replace("\\", "\\\\").replace(";", "\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def slots_to_ics(items, now=None):
+    """iCalendar text with one event per (title, slot) pair, to import the
+    suggestions into a calendar app."""
+    import hashlib
+    stamp = (now or pd.Timestamp.now(tz="UTC")).tz_convert("UTC").strftime("%Y%m%dT%H%M%SZ")
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//CalendarTimeTracker//Free slots//EN",
+             "CALSCALE:GREGORIAN"]
+    for title, slot in items:
+        start = slot["start"].tz_convert("UTC").strftime("%Y%m%dT%H%M%SZ")
+        end = slot["end"].tz_convert("UTC").strftime("%Y%m%dT%H%M%SZ")
+        uid = hashlib.md5(f"{title}|{start}|{end}".encode()).hexdigest()
+        lines += ["BEGIN:VEVENT", f"UID:{uid}@calendartimetracker", f"DTSTAMP:{stamp}",
+                  f"DTSTART:{start}", f"DTEND:{end}", f"SUMMARY:{_ics_text(title)}",
+                  f"DESCRIPTION:{_ics_text('Suggested by CalendarTimeTracker: ' + slot['reason'])}",
+                  "END:VEVENT"]
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(lines) + "\r\n"

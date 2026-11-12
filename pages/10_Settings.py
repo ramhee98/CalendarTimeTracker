@@ -2,24 +2,25 @@ import glob
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, time, timedelta
 
 import pandas as pd
 import requests
 import streamlit as st
+import tzlocal
 
-from analysis import is_all_day, merge_tag_variants, tag_occurrences
+from analysis import DAY_GROUPS, WEEKDAY_ABBR, is_all_day, merge_tag_variants, tag_occurrences
 from calendar_store import decode_ics_response, get_cache_file_path, hash_url
 from utils import (
     CALENDARS_JSON, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings,
     load_calendar_urls, load_tag_groups, normalize_calendar_name, normalize_time, read_calendars_config,
-    save_app_settings, write_calendars_config, write_file_with_backup,
+    save_app_settings, slot_blocker, write_calendars_config, write_file_with_backup,
 )
 
 st.set_page_config(page_title="Settings", layout="wide")
 st.title("⚙️ Settings")
-st.caption("Manage your calendars, how time is counted and displayed, the Tags page, the local event cache, "
-           "and edit the config files directly.")
+st.caption("Manage your calendars, how time is counted and displayed, the Tags page, free-slot suggestions, "
+           "the local event cache, and edit the config files directly.")
 
 # Messages that should survive the rerun after a save. They go into a
 # container that always exists: a message added above the tabs would shift
@@ -89,8 +90,8 @@ def cache_info(path):
     return info
 
 
-tab_calendars, tab_display, tab_tags, tab_cache, tab_raw = st.tabs(
-    ["📅 Calendars", "📊 Data & display", "🏷️ Tags", "💾 Cache & sync", "📝 Raw files"]
+tab_calendars, tab_display, tab_tags, tab_slots, tab_cache, tab_raw = st.tabs(
+    ["📅 Calendars", "📊 Data & display", "🏷️ Tags", "💡 Free slots", "💾 Cache & sync", "📝 Raw files"]
 )
 
 # =====================================================================
@@ -440,6 +441,238 @@ def render_tags_tab():
 
 with tab_tags:
     render_tags_tab()
+
+# =====================================================================
+# Free slots
+# =====================================================================
+SCHEDULE_DAYS = list(DAY_GROUPS) + WEEKDAY_ABBR
+
+
+def to_time(text, default="00:00"):
+    try:
+        h, m = str(text or default).split(":")[:2]
+        return time(int(h), int(m))
+    except ValueError:
+        return time(0, 0)
+
+
+def hm(t):
+    return t.strftime("%H:%M") if isinstance(t, time) else str(t)[:5]
+
+
+def render_slots_tab():
+    settings = load_app_settings()
+    calendars, _ = load_calendar_urls()
+    calendars = calendars or []
+    time_calendars = sorted({normalize_calendar_name(c["custom_name"]) for c in calendars if c.get("type") != "tags"})
+    all_calendars = sorted({normalize_calendar_name(c["custom_name"]) for c in calendars})
+    st.caption(
+        "The 💡 Suggested slots on the Goals page look for free time to reach your goals. Here you decide "
+        "what counts as not free: events of blocking calendars, fixed times every week, and sleep."
+    )
+
+    # --- Blocking calendars ---
+    st.markdown("**Blocking calendars**")
+    mode = st.radio(
+        "Which calendars block time",
+        ["all", "custom"],
+        index=1 if settings["slots_blocking_mode"] == "custom" else 0,
+        format_func={"all": "All calendars (also ones added later)", "custom": "Choose per calendar"}.get,
+        horizontal=True,
+        key="slots_mode",
+    )
+    if mode == "all":
+        free_blocks = st.checkbox(
+            "Events marked as free block too", value=bool(settings["slots_free_blocks"]), key="slots_free_all",
+            help="Calendar apps let you show an event as Free or Busy. Off = only busy events block.",
+        )
+        per_calendar, new_block = settings["slots_calendars"], settings["slots_new_calendars_block"]
+    else:
+        free_blocks = settings["slots_free_blocks"]
+        saved = settings["slots_calendars"]
+        rows = [{"Calendar": c,
+                 "Blocks": bool(saved.get(c, {}).get("block", True)),
+                 "Free events block too": bool(saved.get(c, {}).get("free", False))} for c in time_calendars]
+        edited = st.data_editor(
+            pd.DataFrame(rows, columns=["Calendar", "Blocks", "Free events block too"]),
+            hide_index=True, use_container_width=True, key="slots_calendar_editor",
+            disabled=["Calendar"],
+            column_config={
+                "Blocks": st.column_config.CheckboxColumn(help="Events of this calendar are never suggested over"),
+                "Free events block too": st.column_config.CheckboxColumn(
+                    help="Off = only events shown as Busy block; on = events shown as Free block too"),
+            },
+        )
+        per_calendar = {r["Calendar"]: {"block": bool(r["Blocks"]), "free": bool(r["Free events block too"])}
+                        for r in edited.to_dict("records")}
+        new_block = st.checkbox(
+            "Calendars added later block time (busy events only)",
+            value=bool(settings["slots_new_calendars_block"]), key="slots_new_block",
+        )
+    all_day_blocks = st.checkbox(
+        "All-day events block the whole day", value=bool(settings["slots_all_day_blocks"]), key="slots_all_day",
+        help="E.g. trips or holidays. Off = all-day events never block.",
+    )
+    st.caption("Tag calendars never block. Events marked as free are only known after a sync.")
+
+    # --- Weekly schedule ---
+    st.markdown("**Blocked every week**")
+    st.caption(
+        "Times that are never suggested, e.g. Mon 08:00–10:00 and 13:00–15:00. Pick a weekday, Weekdays, "
+        "Weekend or Every day; a block that ends before it starts runs past midnight (22:00–07:00)."
+    )
+    schedule_df = pd.DataFrame(
+        [{"day": r.get("day", "Every day"), "from": to_time(r.get("from")), "to": to_time(r.get("to")),
+          "label": r.get("label", "")} for r in settings["slots_schedule"]],
+        columns=["day", "from", "to", "label"],
+    )
+    edited_schedule = st.data_editor(
+        schedule_df, num_rows="dynamic", hide_index=True, use_container_width=True, key="slots_schedule_editor",
+        column_config={
+            "day": st.column_config.SelectboxColumn("Day", options=SCHEDULE_DAYS, required=True, default="Every day"),
+            "from": st.column_config.TimeColumn("From", format="HH:mm", step=300, required=True),
+            "to": st.column_config.TimeColumn("To", format="HH:mm", step=300, required=True),
+            "label": st.column_config.TextColumn("Label"),
+        },
+    )
+    schedule = [
+        {"day": r["day"], "from": hm(r["from"]), "to": hm(r["to"]), "label": str(r["label"] or "").strip()}
+        for r in edited_schedule.to_dict("records")
+        if isinstance(r["day"], str) and r["from"] is not None and r["to"] is not None
+        and not pd.isna(r["from"]) and not pd.isna(r["to"])
+    ]
+
+    # --- Sleep ---
+    st.markdown("**Sleep**")
+    sleep_modes = {"none": "Only the weekly blocks above", "calendar": "A sleep calendar",
+                   "markers": "\"Going to bed\" / \"waking up\" events"}
+    sleep_mode = st.radio("Sleep comes from", list(sleep_modes), format_func=sleep_modes.get, horizontal=True,
+                          index=list(sleep_modes).index(settings["slots_sleep_mode"])
+                          if settings["slots_sleep_mode"] in sleep_modes else 0, key="slots_sleep_mode")
+    sleep_calendar, marker_calendar = settings["slots_sleep_calendar"], settings["slots_marker_calendar"]
+    bed_text, wake_mode = settings["slots_bed_text"], settings["slots_wake_mode"]
+    wake_text, wake_times = settings["slots_wake_text"], dict(settings["slots_wake_times"])
+    winddown, fallback = settings["slots_winddown_minutes"], settings["slots_sleep_fallback"]
+    if sleep_mode == "calendar":
+        if not all_calendars:
+            st.info("No calendars configured.")
+        else:
+            guess = next((i for i, c in enumerate(all_calendars)
+                          if any(w in c.casefold() for w in ("sleep", "schlaf"))), 0)
+            sleep_calendar = st.selectbox(
+                "Sleep calendar", all_calendars,
+                index=all_calendars.index(sleep_calendar) if sleep_calendar in all_calendars else guess,
+                key="slots_sleep_calendar", help="Every event in it counts as sleep, from its start to its end.",
+            )
+    elif sleep_mode == "markers":
+        options = [""] + all_calendars
+        marker_calendar = st.selectbox(
+            "Look for the events in", options,
+            index=options.index(marker_calendar) if marker_calendar in options else 0,
+            format_func=lambda c: c or "Any calendar", key="slots_marker_calendar",
+        )
+        c1, c2 = st.columns(2)
+        bed_text = c1.text_input("Going to bed: event name contains", bed_text, key="slots_bed_text",
+                                 help="Ignoring case. Sleep starts at this event's start.")
+        wake_mode = c2.radio("Sleep ends at", ["event", "fixed"], index=1 if wake_mode == "fixed" else 0,
+                             format_func={"event": "A \"waking up\" event", "fixed": "A fixed time per day"}.get,
+                             horizontal=True, key="slots_wake_mode")
+        if wake_mode == "event":
+            wake_text = c2.text_input("Waking up: event name contains", wake_text, key="slots_wake_text",
+                                      help="The first such event within 16 hours ends the sleep; "
+                                           "without one, sleep lasts 8 hours.")
+        else:
+            cols = st.columns(7)
+            wake_times = {d: hm(cols[i].time_input(d, to_time(wake_times.get(d), "07:00"),
+                                                   step=timedelta(minutes=5), key=f"slots_wake_{d}"))
+                          for i, d in enumerate(WEEKDAY_ABBR)}
+    if sleep_mode != "none":
+        c1, c2 = st.columns(2)
+        winddown = c1.number_input("Time to do nothing before going to bed (minutes)", 0, 240,
+                                   int(winddown), step=5, key="slots_winddown")
+        fallback = c2.checkbox("On nights without data, use my usual sleep times (last 4 weeks)",
+                               value=bool(fallback), key="slots_fallback",
+                               help="Future nights usually have no sleep events yet; this keeps them blocked.")
+
+    # --- Slots ---
+    st.markdown("**Suggestions**")
+    c1, c2, c3 = st.columns(3)
+    min_minutes = c1.number_input("Shortest slot (minutes)", 15, 240, int(settings["slots_min_minutes"]), step=15,
+                                  key="slots_min")
+    buffer_minutes = c2.number_input("Buffer around events (minutes)", 0, 120, int(settings["slots_buffer_minutes"]),
+                                     step=5, key="slots_buffer")
+    max_slots = c3.number_input("Suggestions per goal", 1, 10, int(settings["slots_max_per_goal"]), step=1,
+                                key="slots_max")
+
+    new_settings = dict(settings)
+    new_settings.update({
+        "slots_blocking_mode": mode,
+        "slots_free_blocks": bool(free_blocks),
+        "slots_calendars": per_calendar,
+        "slots_new_calendars_block": bool(new_block),
+        "slots_all_day_blocks": bool(all_day_blocks),
+        "slots_schedule": schedule,
+        "slots_sleep_mode": sleep_mode,
+        "slots_sleep_calendar": sleep_calendar,
+        "slots_marker_calendar": marker_calendar,
+        "slots_bed_text": str(bed_text).strip(),
+        "slots_wake_mode": wake_mode,
+        "slots_wake_text": str(wake_text).strip(),
+        "slots_wake_times": wake_times,
+        "slots_winddown_minutes": int(winddown),
+        "slots_sleep_fallback": bool(fallback),
+        "slots_min_minutes": int(min_minutes),
+        "slots_buffer_minutes": int(buffer_minutes),
+        "slots_max_per_goal": int(max_slots),
+    })
+
+    # --- Preview with the values above (saved or not) ---
+    with st.expander("👀 Preview: blocked and free time in the next 7 days"):
+        now = pd.Timestamp.now(tz=tzlocal.get_localzone())
+        try:
+            blocked_for, nights_for = slot_blocker(new_settings, now)
+        except Exception as e:  # e.g. a schedule row being edited
+            st.warning(f"Can't preview: {e}")
+        else:
+            lo = now.normalize()
+            preview = []
+            for i in range(7):
+                a, b = lo + pd.Timedelta(days=i), lo + pd.Timedelta(days=i + 1)
+                blocked = blocked_for(a, b)
+                free = 24 - sum((y - x).total_seconds() for x, y in blocked) / 3600
+                preview.append({"Day": a.strftime("%a %d.%m."), "Free (h)": round(free, 1),
+                                "Blocked": ", ".join(f"{x:%H:%M}–{y:%H:%M}" for x, y in blocked) or "—"})
+            st.dataframe(pd.DataFrame(preview), hide_index=True, use_container_width=True)
+            if sleep_mode != "none":
+                nights = nights_for(lo - pd.Timedelta(days=3), lo + pd.Timedelta(days=7))
+                if nights:
+                    st.dataframe(pd.DataFrame([{
+                        "Night of": f"{n:%a %d.%m.}", "Bed": f"{bed:%a %H:%M}", "Wake": f"{wake:%a %H:%M}",
+                        "From": "event" if src == "event" else "usual times",
+                    } for n, bed, wake, src in nights]), hide_index=True, use_container_width=True)
+                else:
+                    st.info("No sleep found: check the calendar or the event names, and sync.")
+            st.caption("Blocked times include the buffer around events. Free hours count every gap, also "
+                       "ones shorter than the shortest slot.")
+
+    if st.button("💾 Save free-slot settings", type="primary"):
+        problems = []
+        if sleep_mode == "markers" and not new_settings["slots_bed_text"]:
+            problems.append("Enter the text of your going-to-bed events.")
+        if sleep_mode == "markers" and wake_mode == "event" and not new_settings["slots_wake_text"]:
+            problems.append("Enter the text of your waking-up events, or use a fixed time per day.")
+        if sleep_mode == "calendar" and not sleep_calendar:
+            problems.append("Pick a sleep calendar.")
+        for p in problems:
+            st.error(p)
+        if not problems:
+            save_app_settings(new_settings)
+            flash("Saved the free-slot settings.")
+            st.rerun()
+
+
+with tab_slots:
+    render_slots_tab()
 
 # =====================================================================
 # Cache & sync

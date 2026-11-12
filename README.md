@@ -131,6 +131,7 @@ Set targets and see whether you're living the week you intended.
 - **Done vs booked**: hours (or tags) already passed this period, plus events still scheduled, with a status (reached, on track, behind, over budget)
 - **History**: bar chart of past periods (met / missed) with the target lines, current streak and hit rate
 - **Home page**: progress bars for every goal at the top
+- **💡 Suggested slots**: for every calendar or category goal with a Min that isn't covered by booked events, free slots in the rest of this day/week/month (or the next one) that would close the gap. Slots prefer the weekdays and hours you usually spend on that goal, are spread over different days, and can be downloaded as `.ics` to import into your calendar app. What counts as busy is set in Settings → 💡 Free slots
 - **Editable in the app**: pick from one list where every entry shows whether it is a 📅 calendar, 🗂️ category, 🏷️ tag or 🔖 tag group, so targets with the same name can't be mixed up. Goals are stored in `goals.json`
 
 ---
@@ -222,6 +223,11 @@ Manage the app from the browser: forms for the common settings, plus a raw text 
 - **📊 Data & display**: how all-day and multi-day events are counted, plus the default "View data by" choice and default date range used when a page opens. Stored in `app_settings.json`.
 - **🏷️ Tags**: defaults for the Tags page (see the 🏷️ Tags section above). Also stored in `app_settings.json`.
 - **💾 Cache & sync**: cached events, date range and last update per calendar; sync one or all calendars, clear one calendar's cache, and delete cache files left behind by removed calendars, individually or all at once. Also choose whether 🔄 Sync Calendars on a page fetches all calendars (default) or only those the page shows (tag calendars on the Tags page, time calendars on the other pages). Home always syncs all calendars.
+- **💡 Free slots**: what blocks the suggested slots on the Goals page:
+  - **Blocking calendars**: all calendars (also ones added later), or per calendar whether it blocks and whether its events marked as *free* block too (otherwise only *busy* events do); plus whether calendars added later block and whether all-day events block the whole day. Tag calendars never block
+  - **Blocked every week**: fixed times per weekday, e.g. Mon 08:00–10:00 and 13:00–15:00, or for Weekdays, Weekend or Every day; a block ending before it starts runs past midnight (night 22:00–07:00)
+  - **Sleep**: from a sleep calendar, or from events whose name contains e.g. "going to bed" (sleep start) and "waking up" (sleep end) or a fixed wake-up time per weekday. Optional time to do nothing before going to bed (e.g. 30 min). Nights without data (like future ones) use your usual sleep times of the last 4 weeks; sleeps under 3 hours count as naps
+  - Shortest slot, buffer around events, suggestions per goal, and a preview of the blocked and free time of the next 7 days and the detected nights
 - **📝 Raw files**: edit `calendars.json`, `calendars.txt`, `app_settings.json`, `goals.json`, `tag_groups.json`, `social_analysis_settings.json` and `ai_config.json` as text. JSON is checked before saving, the previous version is kept as `<file>.bak` (and can be loaded back), and JSON can be reformatted. `.env` with the OpenAI key is not shown.
 
 ---
@@ -288,7 +294,7 @@ Tag calendars are synced like any other calendar, but are left out of all hour t
 
 These are written by the app when you save something, are ignored by git, and can be edited on Settings → 📝 Raw files:
 
-- `app_settings.json`: counting, display, sync and Tags page settings from the Settings page
+- `app_settings.json`: counting, display, sync, Tags page and free-slot settings from the Settings page
 - `goals.json`: goals from the Goals page
 - `tag_groups.json`: tag groups from the Tags page
 - `social_analysis_settings.json`: Social Analysis settings

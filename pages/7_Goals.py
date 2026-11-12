@@ -4,10 +4,11 @@ import altair as alt
 from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
     load_goals, save_goals, render_goal_progress, goal_type_label, GOAL_TYPE_LABELS,
-    load_tag_occurrences, load_tag_groups,
+    load_tag_occurrences, load_tag_groups, load_app_settings, slot_blocker,
 )
 from analysis import (
     PERIODS, evaluate_goal, format_goal_amount, goal_target_text, is_tag_goal, period_label,
+    slots_to_ics, suggest_goal_slots,
 )
 
 st.set_page_config(page_title="Goals", layout="wide")
@@ -135,6 +136,62 @@ st.dataframe(overview, use_container_width=True, hide_index=True)
 st.caption("Done = hours (or tags) already passed this period, Booked = done plus events still scheduled. "
            "Streak and hit rate count complete periods only. Tags are read from the local cache; "
            "🔄 Sync Calendars updates them too unless Sync is limited to the page's calendars.")
+
+# --- Free-slot suggestions ---
+st.subheader("💡 Suggested slots")
+time_min_goals = [g for g in goals if not is_tag_goal(g) and g["min"] is not None]
+if not time_min_goals:
+    st.caption("Suggestions are made for calendar and category goals with a Min.")
+else:
+    plan = st.radio("Plan for", ["current", "next"], horizontal=True, key="slots_plan",
+                    format_func={"current": "The rest of this day / week / month",
+                                 "next": "The next day / week / month"}.get)
+    slot_settings = load_app_settings()
+    # Blocking uses every event (long and free ones too): the free-slot
+    # settings decide what blocks, not the data-accuracy rules.
+    raw_df = build_events_df(all_events, {"long_events": "include", "ignore_free_events": False})
+    with st.spinner("Looking for free time..."):
+        blocked_for, nights_for = slot_blocker(slot_settings, now, time_events=raw_df)
+        plans = suggest_goal_slots(
+            df, time_min_goals, now, blocked_for, plan=plan,
+            min_minutes=slot_settings["slots_min_minutes"],
+            buffer_minutes=slot_settings["slots_buffer_minutes"],
+            max_slots=slot_settings["slots_max_per_goal"],
+        )
+    if slot_settings["slots_sleep_mode"] != "none" and not nights_for(now, now + pd.Timedelta(days=7)):
+        st.warning("No sleep found for the coming nights, so night-time counts as free. Check the sleep "
+                   "settings in Settings → 💡 Free slots (calendar, event names, usual sleep times) and sync.")
+    if not plans:
+        st.success("Every goal with a Min is reached or covered by booked events, nothing to plan.")
+    all_items = []
+    for p in plans:
+        goal = p["goal"]
+        name = goal["name"]
+        st.markdown(f"**{target_label(goal['type'], name)}** · {p['need_hours']:.1f}h to go "
+                    f"({p['booked']:.1f}h of {goal_target_text(goal)} booked "
+                    f"{'for ' + period_label(goal['period'], p['period_start']) if plan == 'next' else 'so far'})")
+        if p["slots"]:
+            st.dataframe(pd.DataFrame([{
+                "Day": f"{s['start']:%a %d.%m.}",
+                "Time": f"{s['start']:%H:%M}–{s['end']:%H:%M}",
+                "Length": f"{s['minutes'] / 60:g}h",
+                "Why": s["reason"],
+            } for s in p["slots"]]), hide_index=True, use_container_width=True)
+            items = [(name, s) for s in p["slots"]]
+            all_items += items
+            st.download_button(f"📥 Add to calendar (.ics) · {name}", slots_to_ics(items, now).encode("utf-8"),
+                               f"slots_{name}.ics".replace(" ", "_"), "text/calendar", key=f"ics_{goal['type']}_{name}")
+        if p["missing_hours"] > 1e-6:
+            st.warning(f"Not enough free time found for {p['missing_hours']:.1f}h"
+                       + (f" (only {p['free_hours']:.1f}h free in total)." if p["free_hours"] < p["need_hours"]
+                          else f" within {slot_settings['slots_max_per_goal']} suggestion(s): raise "
+                               "Suggestions per goal in Settings → 💡 Free slots for more."))
+    if len(plans) > 1 and all_items:
+        st.download_button("📥 Add all suggestions to calendar (.ics)", slots_to_ics(all_items, now).encode("utf-8"),
+                           "slots_all.ics", "text/calendar", key="ics_all")
+    st.caption("Free = not blocked by events, the weekly blocked times or sleep, with a buffer around events. "
+               "Slots prefer the days and hours you usually work on a goal and are spread over different days. "
+               "Change what blocks time in Settings → 💡 Free slots. The .ics files import into most calendar apps.")
 
 # --- History per goal ---
 st.subheader("History")
