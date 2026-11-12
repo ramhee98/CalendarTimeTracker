@@ -65,27 +65,27 @@ def random_distinct_color(index, total_colors):
     return color
 
 
-def fetch_and_parse_ics(url, calendar_name):
+def fetch_and_parse_ics(url, calendar_name, source="sync"):
     """Fetch an .ics feed, expand its events and merge them into the CSV cache.
 
     No Streamlit dependencies, so the background refresher can use it too.
-    Raises on fetch/parse errors; callers decide how to report them.
+    Every fetch is recorded on the Calendar Health page (`source`: "sync",
+    "background" or "check"). An HTTP error falls back to the cached events;
+    other fetch/parse errors raise and callers decide how to report them.
     """
-    # Fetch .ics content
-    parsed_url = urlparse(url)
-    # Check if it's a local file URL
-    if parsed_url.scheme == "file":
-        path = parsed_url.path
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-    else:
-        response = requests.get(url)
-        if response.status_code != 200:
+    from calendar_health import FeedError, check_ics_text, feed_stats, fetch_feed, record_check, record_failure
+
+    try:
+        content, meta = fetch_feed(url)
+        check_ics_text(content, meta)
+    except FeedError as e:
+        record_failure(url, calendar_name, e, source)
+        if e.kind == "http":
             # Server error: fall back to the cached events for this calendar.
             return load_cached_events(url).to_dict("records")
-        content = decode_ics_response(response)
-
-    ensure_ics_content(content)
+        if e.kind == "not_ics":
+            ensure_ics_content(content)  # raises the existing, more detailed message
+        raise
 
     # Extract calendar name from raw text if not set by calendars file
     if calendar_name == "Unnamed":
@@ -95,10 +95,18 @@ def fetch_and_parse_ics(url, calendar_name):
                 break
 
     # Parse using ics
-    ics_cal = Calendar(content)
+    try:
+        ics_cal = Calendar(content)
+    except Exception as e:
+        record_failure(url, calendar_name, FeedError("parse", str(e)[:200], meta.get("http_status"), meta.get("ms")),
+                       source)
+        raise
     events = []
+    errors = []
+    expanded = expand_calendar_events(ics_cal.events, errors=errors)
+    record_check(url, calendar_name, True, meta, feed_stats(expanded, errors), source=source)
     # Expand recurring events into individual occurrences.
-    for event, start, end, occ_uid in expand_calendar_events(ics_cal.events):
+    for event, start, end, occ_uid in expanded:
         duration = (end - start).total_seconds() / 3600
         events.append({
             "calendar": calendar_name,
@@ -404,6 +412,14 @@ DEFAULT_APP_SETTINGS = {
     # Home always syncs all.
     "sync_scope": "all",
 
+    # --- Calendar Health page ---
+    "health_fail_threshold": 2,  # failed fetches in a row before a calendar counts as failing
+    "health_drop_percent": 50,   # warn when the event count drops by this much (%)
+    "health_frozen_days": 45,    # warn when nothing in a feed changed for this long (0 = off)
+    "health_slow_seconds": 10,   # warn when a fetch takes longer
+    "health_stale_hours": 48,    # warn when a calendar wasn't checked for this long
+    "health_banner": True,       # show failing calendars at the top of every page
+
     # --- Free-slot suggestions (Goals page) ---
     # "all": every time calendar blocks (also ones added later); events
     # marked as free only block with slots_free_blocks.
@@ -580,6 +596,7 @@ def load_events_for_page(page_key, kind="time", stop_if_empty=True):
     events are available (unless `stop_if_empty` is False).
     """
     flag = f"force_refresh_{page_key}"
+    render_health_banner()
     _, col2, col3 = st.columns([2, 1, 1])
     with col2:
         if st.button("⚡ Quick Load", help="Load instantly from local cache", key=f"{page_key}_quick"):
@@ -856,4 +873,44 @@ def slot_blocker(settings, now, time_events=None, tag_events=None):
         )
 
     return blocked_for, lambda lo, hi: sleep_for(lo, hi)[1]
+
+
+# --- Calendar health (Calendar Health page, banner) ---
+
+def health_thresholds(settings=None):
+    settings = settings or load_app_settings()
+    return {
+        "fail_threshold": int(settings.get("health_fail_threshold", 2)),
+        "drop_percent": float(settings.get("health_drop_percent", 50)),
+        "frozen_days": int(settings.get("health_frozen_days", 45)),
+        "slow_seconds": float(settings.get("health_slow_seconds", 10)),
+        "stale_hours": float(settings.get("health_stale_hours", 48)),
+    }
+
+
+def calendar_health_rows(settings=None):
+    """(calendar info, status) for every configured calendar, in config order."""
+    from calendar_health import calendar_status, load_health
+    from calendar_store import hash_url
+
+    calendars, _ = load_calendar_urls()
+    data = load_health()["calendars"]
+    thresholds = health_thresholds(settings)
+    return [(c, calendar_status(data.get(hash_url(c["url"]), {}).get("checks", []), thresholds=thresholds))
+            for c in (calendars or [])]
+
+
+def render_health_banner():
+    """A warning at the top of a page when calendars are failing."""
+    settings = load_app_settings()
+    if not settings.get("health_banner", True):
+        return
+    try:
+        failing = [c["custom_name"] for c, status in calendar_health_rows(settings) if status["level"] == "failing"]
+    except Exception:
+        return  # never break a page over the health banner
+    if failing:
+        names = ", ".join(failing[:3]) + (f" and {len(failing) - 3} more" if len(failing) > 3 else "")
+        st.warning(f"🩺 {len(failing)} calendar(s) can't be fetched: {names}. Their cached events are still "
+                   "used. Details on the Calendar Health page.")
 

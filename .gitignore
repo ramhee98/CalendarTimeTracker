@@ -31,6 +31,8 @@ social_analysis_settings.json
 app_settings.json
 goals.json
 tag_groups.json
+sync_health.json
+sync_health.json.tmp
 
 # VS Code
 .vscode/

@@ -1,5 +1,5 @@
 import streamlit as st
-from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings
+from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings, render_health_banner
 from analysis import clip_to_range
 import pandas as pd
 import altair as alt
@@ -7,6 +7,7 @@ from datetime import date
 
 st.set_page_config(page_title="Trend Charts", layout="wide")
 st.title("Calendar Trends Overview")
+render_health_banner()
 st.caption("Visualize how your calendar or category usage changes over time.")
 
 # Add performance improvements

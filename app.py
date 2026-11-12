@@ -14,7 +14,7 @@ from utils import (
     default_view_index,
     load_calendar_urls, load_all_events, load_all_events_from_cache, parse_ics_from_url,
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
-    build_events_df, load_goals, render_goal_progress, load_tag_occurrences, load_tag_groups,
+    build_events_df, load_goals, render_goal_progress, render_health_banner, load_tag_occurrences, load_tag_groups,
 )
 from analysis import (
     clip_to_range, long_event_mask, find_overlaps, union_hours, evaluate_goal, is_tag_goal,
@@ -76,9 +76,9 @@ def is_update_available(current, latest):
 def _fetch_and_parse_ics(url, calendar_name):
     """Core function to fetch and parse ICS - no Streamlit dependencies."""
     try:
-        return fetch_and_parse_ics(url, calendar_name)
+        return fetch_and_parse_ics(url, calendar_name, source="background")
     except Exception as e:
-        print(f"Error loading {url}: {e}")
+        print(f"Error loading {calendar_name}: {e}")  # URL left out: it may contain a secret key
         return []
 
 # --- Background auto-refresh (runs 5 minutes before 24-hour TTL expires) ---
@@ -626,6 +626,7 @@ with st.sidebar:
     st.markdown("🔗 [GitHub Repository](https://github.com/ramhee98/CalendarTimeTracker)")
 
 # --- Cache management ---
+render_health_banner()
 col1, col2, col3 = st.columns([2, 1, 1])
 with col2:
     if st.button("⚡ Quick Load", help="Load instantly from local cache"):

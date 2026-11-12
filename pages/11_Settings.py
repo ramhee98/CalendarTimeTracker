@@ -768,6 +768,40 @@ with tab_cache:
              "Saved immediately.",
     )
 
+    with st.expander("🩺 Calendar health checks"):
+        st.caption("Every sync records whether each calendar URL still works; see the Calendar Health page.")
+        hs = load_app_settings()
+        with st.form("health_settings"):
+            h1, h2 = st.columns(2)
+            fail_threshold = h1.number_input(
+                "Failed fetches in a row before a calendar counts as failing", 1, 10,
+                int(hs["health_fail_threshold"]), help="A single failure is only a warning, so a short outage "
+                                                       "of the calendar server doesn't turn it red.")
+            drop_percent = h2.number_input("Warn when the event count drops by (%)", 10, 100,
+                                           int(hs["health_drop_percent"]), step=5)
+            frozen_days = h1.number_input(
+                "Warn when nothing in a feed changed for (days, 0 = off)", 0, 3650, int(hs["health_frozen_days"]),
+                help="Uses the LAST-MODIFIED of the events. A calendar that's no longer updated, e.g. an old "
+                     "export, shows up here.")
+            slow_seconds = h2.number_input("Warn when a fetch takes longer than (seconds)", 1, 60,
+                                           int(hs["health_slow_seconds"]))
+            stale_hours = h1.number_input("Warn when a calendar wasn't checked for (hours)", 1, 720,
+                                          int(hs["health_stale_hours"]),
+                                          help="The automatic sync runs every 24 hours while the app is running.")
+            banner = h2.checkbox("Show failing calendars at the top of every page", value=bool(hs["health_banner"]))
+            if st.form_submit_button("💾 Save health settings"):
+                hs.update({
+                    "health_fail_threshold": int(fail_threshold),
+                    "health_drop_percent": int(drop_percent),
+                    "health_frozen_days": int(frozen_days),
+                    "health_slow_seconds": int(slow_seconds),
+                    "health_stale_hours": int(stale_hours),
+                    "health_banner": bool(banner),
+                })
+                save_app_settings(hs)
+                flash("Saved the health settings.")
+                st.rerun()
+
     rows, tag_hints = [], []
     for c in calendars:
         path = get_cache_file_path(c["url"])

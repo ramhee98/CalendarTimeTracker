@@ -9,10 +9,12 @@ import os
 import requests
 import calendar
 from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response, is_free_event
-from utils import select_month_range, normalize_time, ensure_ics_content, drop_free_events
+from utils import select_month_range, normalize_time, ensure_ics_content, drop_free_events, render_health_banner
+from calendar_health import FeedError, check_ics_text, feed_stats, fetch_feed, record_check, record_failure
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
 st.title("👥 Social Time Analysis")
+render_health_banner()
 st.caption("Analyze who you spend the most time with")
 
 # --- Settings file management ---
@@ -110,24 +112,30 @@ def load_events_from_cache(url, calendar_name):
 def fetch_calendar_events(url, calendar_name):
     """Fetch and parse events from a calendar URL and update CSV cache."""
     try:
-        if url.startswith("file://"):
-            path = url.replace("file://", "")
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-        else:
-            response = requests.get(url, timeout=30)
-            if response.status_code != 200:
+        try:
+            content, meta = fetch_feed(url)
+            check_ics_text(content, meta)
+        except FeedError as e:
+            record_failure(url, calendar_name, e)
+            if e.kind == "http":
                 # Server error: fall back to the cached events.
                 return load_events_from_cache(url, calendar_name)
-            content = decode_ics_response(response)
+            if e.kind == "not_ics":
+                ensure_ics_content(content)  # raises the more detailed message
+            raise
 
-        ensure_ics_content(content)
-
-        cal = Calendar(content)
+        try:
+            cal = Calendar(content)
+        except Exception as e:
+            record_failure(url, calendar_name, FeedError("parse", str(e)[:200], meta.get("http_status"), meta.get("ms")))
+            raise
         events_for_cache = []  # For updating CSV cache
+        errors = []
+        expanded = expand_calendar_events(cal.events, errors=errors)
+        record_check(url, calendar_name, True, meta, feed_stats(expanded, errors))
 
         # Expand recurring events into individual occurrences.
-        for event, start, end, occ_uid in expand_calendar_events(cal.events):
+        for event, start, end, occ_uid in expanded:
             events_for_cache.append({
                 "calendar": calendar_name,
                 "event_name": event.name or "",

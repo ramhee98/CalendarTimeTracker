@@ -1,10 +1,11 @@
 import streamlit as st
 import re
-from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, drop_free_events
+from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, drop_free_events, render_health_banner
 import pandas as pd
 
 st.set_page_config(page_title="Search Events", layout="wide")
 st.title("🔍 Search Events")
+render_health_banner()
 st.caption("Search for events by name and filter by calendar or category.")
 
 # Add performance improvements

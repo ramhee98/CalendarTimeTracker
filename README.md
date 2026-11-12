@@ -21,6 +21,7 @@
 - 🧠 AI Insights page: Calendar AI Insights (ChatGPT-Powered) with day/week/month time grouping
 - 📂 Import ICS page: Upload and import `.ics` files into existing calendars
 - 🏷️ Tags page: counts, trends and weekday / time-of-day patterns for tag calendars such as Oura tags
+- 🩺 Calendar Health page: whether every calendar link still works, with history, warnings and a banner on every page when a calendar fails
 - ⚙️ Settings page: edit calendars, set counting, display and Tags page defaults, manage the event cache, and edit the config files as text
 - 🌍 Time zone normalization support
 - ⚖️ **Data accuracy**: choose whether all-day / multi-day events count, and spot overlapping (double-counted) events
@@ -215,6 +216,20 @@ Count markers from [tag calendars](#tag-calendars), such as Oura tags exported w
 
 ---
 
+### 🩺 Calendar Health
+
+See whether your calendar links still work, before missing events show up in your numbers.
+
+- **Recorded on every fetch**: the 🔄 Sync buttons on the pages and in Settings, the automatic daily sync and the 🩺 Check buttons on this page each record one check per calendar
+- **What's checked**: whether the URL answers (timeouts, unknown server, SSL errors, refused connections and HTTP errors such as 404 "secret link reset" are told apart), whether the answer really is a calendar (not a login or sharing web page, not empty), whether it can be read, how many events it has, how long the fetch took, and when anything in the feed last changed
+- **Status per calendar**: 🟢 OK, 🟡 warning (a single failed fetch, a sudden drop in events or an empty feed, unreadable events, a slow server, a feed where nothing changed for weeks, or no check for a while) and 🔴 failing (several failed fetches in a row). A calendar that fails keeps its cached events
+- **Details**: last good fetch, failures in a row and since when, uptime over the last 30 checks, charts of fetch time and event count, and the recent checks with their errors
+- **Banner**: every page shows a warning when a calendar is failing
+- **Private**: URLs are stored and shown shortened, without the secret part (`https://calendar.google.com/…/basic.ics`). The checks are kept in `sync_health.json` (last 200 per calendar)
+- Thresholds (failures before 🔴, event drop %, days without changes, slow fetch, hours without a check) and the banner are set in Settings → 💾 Cache & sync
+
+---
+
 ### ⚙️ Settings
 
 Manage the app from the browser: forms for the common settings, plus a raw text editor for every config file.
@@ -222,7 +237,7 @@ Manage the app from the browser: forms for the common settings, plus a raw text 
 - **📅 Calendars**: add, edit and remove calendars in `calendars.json` (URL, name, type, category, color) with validation for missing or duplicate URLs, Google Calendar sharing links and invalid colors. The previous file is kept as `calendars.json.bak`, and keys added by hand are preserved. A URL tester checks that a link returns a valid iCal feed. Setups that still use `calendars.txt` can be converted in one click.
 - **📊 Data & display**: how all-day and multi-day events are counted, plus the default "View data by" choice and default date range used when a page opens. Stored in `app_settings.json`.
 - **🏷️ Tags**: defaults for the Tags page (see the 🏷️ Tags section above). Also stored in `app_settings.json`.
-- **💾 Cache & sync**: cached events, date range and last update per calendar; sync one or all calendars, clear one calendar's cache, and delete cache files left behind by removed calendars, individually or all at once. Also choose whether 🔄 Sync Calendars on a page fetches all calendars (default) or only those the page shows (tag calendars on the Tags page, time calendars on the other pages). Home always syncs all calendars.
+- **💾 Cache & sync**: cached events, date range and last update per calendar; sync one or all calendars, clear one calendar's cache, and delete cache files left behind by removed calendars, individually or all at once. Also choose whether 🔄 Sync Calendars on a page fetches all calendars (default) or only those the page shows (tag calendars on the Tags page, time calendars on the other pages). Home always syncs all calendars. The 🩺 Calendar health checks section holds the thresholds of the Calendar Health page.
 - **💡 Free slots**: what blocks the suggested slots on the Goals page:
   - **Blocking calendars**: all calendars (also ones added later), or per calendar whether it blocks and whether its events marked as *free* block too (otherwise only *busy* events do); plus whether calendars added later block and whether all-day events block the whole day. Tag calendars never block
   - **Blocked every week**: fixed times per weekday, e.g. Mon 08:00–10:00 and 13:00–15:00, or for Weekdays, Weekend or Every day; a block ending before it starts runs past midnight (night 22:00–07:00)
@@ -299,6 +314,7 @@ These are written by the app when you save something, are ignored by git, and ca
 - `goals.json`: goals from the Goals page
 - `tag_groups.json`: tag groups from the Tags page
 - `social_analysis_settings.json`: Social Analysis settings
+- `sync_health.json`: the recorded calendar checks of the Calendar Health page (URLs shortened, without secrets)
 - `<file>.bak`: the previous version of a file saved on the Settings page
 
 ### AI Configuration: `ai_config.json`

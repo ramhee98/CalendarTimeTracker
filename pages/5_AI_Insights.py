@@ -4,13 +4,14 @@ from openai import OpenAI
 import os
 import json
 from datetime import date, datetime
-from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings
+from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings, render_health_banner
 from analysis import clip_to_range
 from dotenv import load_dotenv
 from ai_config_manager import load_ai_config, get_system_prompt, get_available_prompt_types, format_prompt_template
 
 st.set_page_config(page_title="AI Insights", layout="wide")
 st.title("Calendar AI Insights (ChatGPT-Powered)")
+render_health_banner()
 st.caption("Understand how your time is distributed with AI-generated insights.")
 
 # --- Persistent cache management ---
