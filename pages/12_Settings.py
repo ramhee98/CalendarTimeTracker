@@ -12,6 +12,7 @@ import tzlocal
 from analysis import DAY_GROUPS, SLEEP_ESTIMATES, WEEKDAY_ABBR, is_all_day, merge_tag_variants, tag_occurrences
 from calendar_store import decode_ics_response, get_cache_file_path, hash_url
 from utils import (
+    clear_event_caches,
     CALENDARS_JSON, DEFAULT_APP_SETTINGS, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings, run_parallel,
     load_calendar_urls, load_tag_groups, normalize_calendar_name, normalize_time, read_calendars_config,
     save_app_settings, slot_blocker, write_calendars_config, write_file_with_backup,
@@ -111,7 +112,7 @@ def render_calendars_tab():
                 {"url": c["url"], **({"custom_name": c["custom_name"]} if c["custom_name"] != "Unnamed" else {})}
                 for c in (txt_calendars or [])
             ]})
-            st.cache_data.clear()
+            clear_event_caches()
             flash(f"Converted {len(txt_calendars or [])} calendar(s) to calendars.json.")
             st.rerun()
         return
@@ -209,7 +210,7 @@ def render_calendars_tab():
             new_config = dict(config)
             new_config["calendars"] = new_calendars
             write_calendars_config(new_config)
-            st.cache_data.clear()
+            clear_event_caches()
             added = len(seen_urls - set(originals))
             removed = len(set(originals) - seen_urls)
             flash(
@@ -915,7 +916,7 @@ with tab_cache:
                 with st.spinner(f"Syncing {selected['custom_name']}..."):
                     try:
                         events = fetch_and_parse_ics(selected["url"], selected["custom_name"])
-                        st.cache_data.clear()
+                        clear_event_caches()
                         flash(f"Synced {selected['custom_name']}: {len(events)} cached events.")
                         st.rerun()
                     except Exception as e:
@@ -930,7 +931,7 @@ with tab_cache:
                 )
                 failed = [f"{c['custom_name']}: {r}" for c, r in zip(calendars, results) if isinstance(r, Exception)]
                 progress.empty()
-                st.cache_data.clear()
+                clear_event_caches()
                 for f in failed:
                     st.error(f)
                 if not failed:
@@ -947,7 +948,7 @@ with tab_cache:
                 path = get_cache_file_path(selected["url"])
                 if os.path.exists(path):
                     os.remove(path)
-                st.cache_data.clear()
+                clear_event_caches()
                 flash(f"Cleared the cache of {selected['custom_name']}.")
                 st.rerun()
 
@@ -1086,7 +1087,7 @@ def render_raw_tab():
             st.session_state.pop(key, None)
         if name == "app_settings.json":
             reset_slot_widgets()
-        st.cache_data.clear()
+        clear_event_caches()
         st.session_state.raw_version += 1
         flash(f"Saved {name}" + (f" (previous version kept as {name}.bak)." if exists else "."))
         st.rerun()

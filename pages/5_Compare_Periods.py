@@ -1,5 +1,5 @@
 import streamlit as st
-from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, render_accuracy_settings, apply_accuracy_settings, render_health_banner
+from utils import clear_event_caches, default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, render_accuracy_settings, apply_accuracy_settings, render_health_banner
 from analysis import clip_to_range
 import pandas as pd
 import altair as alt
@@ -19,7 +19,7 @@ with col2:
         st.rerun()
 with col3:
     if st.button("🔄 Sync Calendars", help="Fetch latest data from calendar URLs"):
-        st.cache_data.clear()
+        clear_event_caches()
         st.session_state.force_refresh_compare = True
         st.rerun()
 

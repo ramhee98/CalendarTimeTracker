@@ -4,7 +4,7 @@ from openai import OpenAI
 import os
 import json
 from datetime import date, datetime
-from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings, render_health_banner
+from utils import clear_event_caches, default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, render_accuracy_settings, apply_accuracy_settings, render_health_banner
 from analysis import clip_to_range
 from dotenv import load_dotenv
 from ai_config_manager import load_ai_config, get_system_prompt, get_available_prompt_types, format_prompt_template
@@ -110,7 +110,7 @@ with col3:
         st.rerun()
 with col4:
     if st.button("🔄 Sync Calendars", help="Fetch latest data from calendar URLs"):
-        st.cache_data.clear()
+        clear_event_caches()
         st.session_state.ai_insights_loaded = False
         # Clear AI response cache when refreshing data
         st.session_state.ai_responses = {}

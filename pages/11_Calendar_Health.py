@@ -7,7 +7,7 @@ import tzlocal
 
 from calendar_health import ERROR_LABELS, MAX_CHECKS, clear_health, load_health
 from calendar_store import hash_url
-from utils import calendar_health_rows, fetch_and_parse_ics, load_app_settings, run_parallel
+from utils import clear_event_caches, calendar_health_rows, fetch_and_parse_ics, load_app_settings, run_parallel
 
 st.set_page_config(page_title="Calendar Health", layout="wide")
 st.title("🩺 Calendar Health")
@@ -55,7 +55,7 @@ def check_calendars(calendars):
     # Failures are recorded in the health file with the reason
     failed = [c["custom_name"] for c, r in zip(calendars, results) if isinstance(r, Exception)]
     progress.empty()
-    st.cache_data.clear()
+    clear_event_caches()
     st.session_state.setdefault("health_flash", []).append(
         f"Checked {len(calendars)} calendar(s)." + (f" Failed: {', '.join(failed)}." if failed else " All answered.")
     )

@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from calendar_store import update_event_store, expand_calendar_events, decode_ics_response, is_free_event, parse_ics
-from utils import load_calendar_urls
+from utils import clear_event_caches, load_calendar_urls
 import requests
 import os
 from datetime import timezone
@@ -103,7 +103,7 @@ if uploaded_file and target_url:
             # Additive merge: add imported events without wiping the target
             # calendar's existing recent/future events.
             updated_df = update_event_store(target_url, import_df, additive=True)
-            st.cache_data.clear() # Clear cache to reflect the imported changes
+            clear_event_caches() # Clear cache to reflect the imported changes
             st.success(f"✅ Imported {len(import_df)} events into: {selected_label}")
             st.caption("Events are now merged into the existing calendar cache.")
             st.dataframe(import_df.head(10))

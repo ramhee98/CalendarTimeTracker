@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-from utils import default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, drop_free_events, render_health_banner
+from utils import clear_event_caches, default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, select_month_range, drop_free_events, render_health_banner
 import pandas as pd
 
 st.set_page_config(page_title="Search Events", layout="wide")
@@ -21,7 +21,7 @@ with col2:
         st.rerun()
 with col3:
     if st.button("🔄 Sync Calendars", help="Fetch latest data from calendar URLs"):
-        st.cache_data.clear()
+        clear_event_caches()
         st.session_state.search_loaded = False
         st.session_state.force_refresh_search = True
         st.rerun()

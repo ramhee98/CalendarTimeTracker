@@ -12,6 +12,7 @@ import tzlocal
 import threading
 import time
 from utils import (
+    clear_event_caches,
     default_view_index,
     load_calendar_urls, load_all_events, load_all_events_from_cache, parse_ics_from_url,
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
@@ -44,7 +45,7 @@ def get_latest_github_version():
     """Fetch the latest version from GitHub's version.txt file"""
     try:
         url = "https://raw.githubusercontent.com/ramhee98/CalendarTimeTracker/main/version.txt"
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=3)
         if response.status_code == 200:
             return response.text.strip()
         else:
@@ -655,7 +656,7 @@ with col2:
         st.rerun()
 with col3:
     if st.button("🔄 Sync Calendars", help="Fetch latest data from calendar URLs"):
-        st.cache_data.clear()
+        clear_event_caches()
         st.session_state.main_app_loaded = False
         st.session_state.force_refresh = True
         st.rerun()

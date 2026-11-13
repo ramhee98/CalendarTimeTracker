@@ -8,7 +8,7 @@ import os
 import requests
 import calendar
 from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response, is_free_event, parse_ics
-from utils import NOT_TIME_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, render_health_banner, run_parallel
+from utils import clear_event_caches, NOT_TIME_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, render_health_banner, run_parallel
 from calendar_health import FeedError, check_ics_text, feed_stats, fetch_feed, record_check, record_failure
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
@@ -569,7 +569,7 @@ else:
                 if loaded_events:
                     st.session_state.loaded_events = loaded_events
                     # Clear Streamlit cache so other pages see fresh data
-                    st.cache_data.clear()
+                    clear_event_caches()
                     st.success(f"Synced {len(loaded_events)} events from {len(selected_calendar_names)} calendar(s)")
 
 # Use events from session state

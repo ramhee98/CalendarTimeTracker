@@ -35,7 +35,7 @@ def get_latest_github_version():
     """Fetch the latest version from GitHub's version.txt file"""
     try:
         url = "https://raw.githubusercontent.com/ramhee98/CalendarTimeTracker/main/version.txt"
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=3)
         if response.status_code == 200:
             return response.text.strip()
         else:
@@ -348,6 +348,14 @@ def _cached_events_frame(calendars, kind, keep_plans, signatures):
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def clear_event_caches():
+    """Forget fetched and cached calendar events (after a sync, import or
+    calendar config change). Unlike st.cache_data.clear(), keeps unrelated
+    cached data such as the GitHub version check."""
+    parse_ics_from_url.clear()
+    _cached_events_frame.clear()
 
 
 def load_events_frame(kind="time", keep_plans=False):
@@ -711,7 +719,7 @@ def load_events_for_page(page_key, kind="time", stop_if_empty=True):
             st.rerun()
     with col3:
         if st.button("🔄 Sync Calendars", help="Fetch latest data from calendar URLs", key=f"{page_key}_sync"):
-            st.cache_data.clear()
+            clear_event_caches()
             st.session_state[flag] = True
             st.rerun()
 
