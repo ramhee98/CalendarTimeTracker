@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-from ics import Calendar
-from calendar_store import update_event_store, expand_calendar_events, decode_ics_response, is_free_event
+from calendar_store import update_event_store, expand_calendar_events, decode_ics_response, is_free_event, parse_ics
 from utils import load_calendar_urls
 import requests
 import os
@@ -78,7 +77,7 @@ uploaded_file = st.file_uploader("Upload a .ics file", type=["ics"])
 if uploaded_file and target_url:
     try:
         content = uploaded_file.read().decode("utf-8")
-        cal = Calendar(content)
+        cal = parse_ics(content)
 
         events = []
         # Extract name only (before first parenthesis)

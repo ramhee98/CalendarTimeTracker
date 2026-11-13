@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from ics import Calendar
 from datetime import datetime, timezone, date, timedelta
 from collections import defaultdict
 import re
@@ -8,8 +7,8 @@ import json
 import os
 import requests
 import calendar
-from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response, is_free_event
-from utils import NOT_TIME_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, render_health_banner
+from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response, is_free_event, parse_ics
+from utils import NOT_TIME_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, render_health_banner, run_parallel
 from calendar_health import FeedError, check_ics_text, feed_stats, fetch_feed, record_check, record_failure
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
@@ -128,7 +127,7 @@ def fetch_calendar_events(url, calendar_name):
             raise
 
         try:
-            cal = Calendar(content)
+            cal = parse_ics(content)
         except Exception as e:
             record_failure(url, calendar_name, FeedError("parse", str(e)[:200], meta.get("http_status"), meta.get("ms")))
             raise
@@ -559,9 +558,12 @@ else:
         if selected_calendar_names and st.button("🔄 Sync selected Calendars", help="Fetch latest data from selected calendar URLs"):
             with st.spinner("Fetching calendar data from URLs..."):
                 loaded_events = []
-                for name in selected_calendar_names:
-                    cal_config = calendar_options[name]
-                    events = fetch_calendar_events(cal_config["url"], name)
+                fetched = run_parallel(
+                    lambda name: fetch_calendar_events(calendar_options[name]["url"], name), selected_calendar_names
+                )
+                for events in fetched:
+                    if isinstance(events, Exception):
+                        raise events
                     loaded_events.extend(events)
                 
                 if loaded_events:

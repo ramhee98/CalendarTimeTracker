@@ -14,7 +14,7 @@ from utils import (
     default_view_index,
     load_calendar_urls, load_all_events, load_all_events_from_cache, parse_ics_from_url,
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
-    build_events_df, load_goals, render_goal_progress, evaluate_goals, render_health_banner, load_tag_occurrences, load_tag_groups,
+    build_events_df, run_parallel, load_goals, render_goal_progress, evaluate_goals, render_health_banner, load_tag_occurrences, load_tag_groups,
 )
 from analysis import (
     clip_to_range, long_event_mask, find_overlaps, union_hours, is_tag_goal,
@@ -116,8 +116,8 @@ def _refresh_calendar_cache_once():
         print(f"[CalendarTimeTracker] Auto-refresh started at {datetime.now()}")
         # Fetch calendars and update local CSV cache (bypasses Streamlit cache)
         calendars = _load_calendar_urls_no_streamlit()
-        for url, custom_name in calendars:
-            _fetch_and_parse_ics(url, custom_name)  # Updates local CSV cache
+        # Updates the local CSV cache, several calendars at a time
+        run_parallel(lambda c: _fetch_and_parse_ics(*c), calendars)
         # Clear Streamlit cache so next user request gets fresh data
         parse_ics_from_url.clear()
         print(f"[CalendarTimeTracker] Auto-refresh completed at {datetime.now()}")

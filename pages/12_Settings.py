@@ -12,7 +12,7 @@ import tzlocal
 from analysis import DAY_GROUPS, SLEEP_ESTIMATES, WEEKDAY_ABBR, is_all_day, merge_tag_variants, tag_occurrences
 from calendar_store import decode_ics_response, get_cache_file_path, hash_url
 from utils import (
-    CALENDARS_JSON, DEFAULT_APP_SETTINGS, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings,
+    CALENDARS_JSON, DEFAULT_APP_SETTINGS, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings, run_parallel,
     load_calendar_urls, load_tag_groups, normalize_calendar_name, normalize_time, read_calendars_config,
     save_app_settings, slot_blocker, write_calendars_config, write_file_with_backup,
 )
@@ -923,14 +923,12 @@ with tab_cache:
         with c3:
             st.write("")
             if st.button("🔄 Sync all calendars", use_container_width=True):
-                failed = []
-                progress = st.progress(0.0)
-                for i, c in enumerate(calendars):
-                    progress.progress(i / len(calendars), text=f"Syncing {c['custom_name']}...")
-                    try:
-                        fetch_and_parse_ics(c["url"], c["custom_name"])
-                    except Exception as e:
-                        failed.append(f"{c['custom_name']}: {e}")
+                progress = st.progress(0.0, text=f"Syncing {len(calendars)} calendar(s)...")
+                results = run_parallel(
+                    lambda c: fetch_and_parse_ics(c["url"], c["custom_name"]), calendars,
+                    on_done=lambda n: progress.progress(n / len(calendars), text=f"Synced {n} of {len(calendars)}..."),
+                )
+                failed = [f"{c['custom_name']}: {r}" for c, r in zip(calendars, results) if isinstance(r, Exception)]
                 progress.empty()
                 st.cache_data.clear()
                 for f in failed:

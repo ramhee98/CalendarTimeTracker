@@ -12,11 +12,12 @@ import json
 import colorsys
 from urllib.parse import urlparse
 import tzlocal
-from ics import Calendar
 import calendar as cal_module
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from calendar_store import (
     update_event_store, load_cached_events, read_events_csv, get_cache_file_path, expand_calendar_events,
-    decode_ics_response, is_free_event,
+    decode_ics_response, is_free_event, parse_ics,
 )
 
 
@@ -99,7 +100,7 @@ def fetch_and_parse_ics(url, calendar_name, source="sync"):
 
     # Parse using ics
     try:
-        ics_cal = Calendar(content)
+        ics_cal = parse_ics(content)
     except Exception as e:
         record_failure(url, calendar_name, FeedError("parse", str(e)[:200], meta.get("http_status"), meta.get("ms")),
                        source)
@@ -124,6 +125,43 @@ def fetch_and_parse_ics(url, calendar_name, source="sync"):
     new_df = pd.DataFrame(events)
     combined_df = update_event_store(url, new_df)
     return combined_df.to_dict("records")
+
+
+SYNC_WORKERS = 8  # calendars fetched at the same time
+
+
+def run_parallel(func, items, workers=SYNC_WORKERS, on_done=None):
+    """[func(item) for item in items], run in a thread pool so slow feeds
+    download while others are parsed. Results keep the order of `items`; an
+    exception raised by `func` is returned in place of its result.
+    `on_done(n)` is called in the calling thread after each finished item
+    (for progress bars). Called from a Streamlit script, the workers get its
+    script context, so st.* calls and st.cache_data work inside `func`."""
+    items = list(items)
+    if not items:
+        return []
+    try:
+        from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+        ctx = get_script_run_ctx(suppress_warning=True)
+    except Exception:  # never fail a sync over the context
+        ctx = None
+
+    def call(item):
+        if ctx is not None:
+            add_script_run_ctx(threading.current_thread(), ctx)
+        try:
+            return func(item)
+        except Exception as e:
+            return e
+
+    results = [None] * len(items)
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(items)))) as pool:
+        futures = {pool.submit(call, item): i for i, item in enumerate(items)}
+        for n, future in enumerate(as_completed(futures), start=1):
+            results[futures[future]] = future.result()
+            if on_done:
+                on_done(n)
+    return results
 
 
 @st.cache_data(ttl=3600, show_spinner=False)  # Spinner handled manually by callers
@@ -250,15 +288,15 @@ def load_all_events(kind="time", sync_all=None, keep_plans=False):
 
         if sync_all is None:
             sync_all = load_app_settings().get("sync_scope", "all") != "page"
+        to_sync = [c for c in calendar_data if c["type"] == kind or sync_all]
+        fetched = run_parallel(lambda c: parse_ics_from_url(c["url"], c["custom_name"]), to_sync)
         all_events = []
-        for calendar_info in calendar_data:
-            if calendar_info["type"] != kind and not sync_all:
-                continue
-            url = calendar_info["url"]
+        for calendar_info, events in zip(to_sync, fetched):
+            if isinstance(events, Exception):
+                raise events
             custom_name = calendar_info["custom_name"]
             category = calendar_info["category"]
             color = calendar_info["color"]
-            events = parse_ics_from_url(url, custom_name)
             if calendar_info["type"] != kind:
                 continue
             events = [dict(e) for e in events]  # don't mutate the st.cache_data result

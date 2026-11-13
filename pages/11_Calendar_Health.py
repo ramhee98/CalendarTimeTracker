@@ -7,7 +7,7 @@ import tzlocal
 
 from calendar_health import ERROR_LABELS, MAX_CHECKS, clear_health, load_health
 from calendar_store import hash_url
-from utils import calendar_health_rows, fetch_and_parse_ics, load_app_settings
+from utils import calendar_health_rows, fetch_and_parse_ics, load_app_settings, run_parallel
 
 st.set_page_config(page_title="Calendar Health", layout="wide")
 st.title("🩺 Calendar Health")
@@ -47,14 +47,13 @@ def local(ts):
 
 def check_calendars(calendars):
     """Fetch (and sync) `calendars`, recording a check for each."""
-    progress = st.progress(0.0)
-    failed = []
-    for i, c in enumerate(calendars):
-        progress.progress(i / len(calendars), text=f"Checking {c['custom_name']}...")
-        try:
-            fetch_and_parse_ics(c["url"], c["custom_name"], source="check")
-        except Exception:
-            failed.append(c["custom_name"])  # recorded in the health file with the reason
+    progress = st.progress(0.0, text=f"Checking {len(calendars)} calendar(s)...")
+    results = run_parallel(
+        lambda c: fetch_and_parse_ics(c["url"], c["custom_name"], source="check"), calendars,
+        on_done=lambda n: progress.progress(n / len(calendars), text=f"Checked {n} of {len(calendars)}..."),
+    )
+    # Failures are recorded in the health file with the reason
+    failed = [c["custom_name"] for c, r in zip(calendars, results) if isinstance(r, Exception)]
     progress.empty()
     st.cache_data.clear()
     st.session_state.setdefault("health_flash", []).append(

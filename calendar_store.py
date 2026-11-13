@@ -1,6 +1,7 @@
 import os
 import re
 import hashlib
+import threading
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from dateutil.rrule import rrulestr
@@ -129,7 +130,26 @@ def recurrence_id_key(event):
     return None
 
 
+# The ics library parses with one shared grammar parser, which breaks
+# (wrong results, errors or a hang) when two threads parse at once. Every
+# parse and expansion of ics objects holds this lock; calendars still
+# download in parallel.
+_ICS_LOCK = threading.RLock()
+
+
+def parse_ics(content):
+    """``ics.Calendar`` of an .ics text, safe to call from several threads."""
+    from ics import Calendar
+    with _ICS_LOCK:
+        return Calendar(content)
+
+
 def expand_calendar_events(events, errors=None, **kwargs):
+    with _ICS_LOCK:
+        return _expand_calendar_events(events, errors, **kwargs)
+
+
+def _expand_calendar_events(events, errors=None, **kwargs):
     """Expand all events of a calendar into ``(event, start, end, uid)``.
 
     Handles RECURRENCE-ID overrides: the override replaces the master
@@ -241,7 +261,22 @@ def save_events_to_cache(url, df):
     path = get_cache_file_path(url)
     df.to_csv(path, index=False)
 
+_store_locks = {}
+_store_locks_guard = threading.Lock()
+
+
 def update_event_store(url, new_events_df, cutoff_days=30, additive=False):
+    """`_update_event_store` with one writer per cache file at a time:
+    calendars sync in parallel, and two of them (or a sync and the
+    background refresh) may share a URL."""
+    path = get_cache_file_path(url)
+    with _store_locks_guard:
+        lock = _store_locks.setdefault(path, threading.Lock())
+    with lock:
+        return _update_event_store(url, new_events_df, cutoff_days, additive)
+
+
+def _update_event_store(url, new_events_df, cutoff_days=30, additive=False):
     """Merge new events into the cached event store for ``url``.
 
     Two modes:
