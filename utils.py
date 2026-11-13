@@ -214,6 +214,18 @@ def is_tag_calendar(calendar):
     return str(calendar.get("type", "time")).lower() == "tags"
 
 
+# All-day overview events of oura-sleep-ical and oura-activity-ical: a
+# monthly summary and one activity overview per day. They're informational
+# (marked free), but would count as 24 hours of sleep or activity and block
+# whole days, so the app leaves them out everywhere (they stay in the cache).
+SUMMARY_UID_PREFIXES = ("oura-monthly-summary-", "oura-activity-summary-", "oura-daily-activity-")
+
+
+def drop_summary_events(events):
+    """`events` (list of dicts) without generated summary events."""
+    return [e for e in events if not str(e.get("uid") or "").startswith(SUMMARY_UID_PREFIXES)]
+
+
 def load_all_events(kind="time", sync_all=None):
     """Sync calendars and return the events of `kind` ("time" or "tags").
 
@@ -245,7 +257,7 @@ def load_all_events(kind="time", sync_all=None):
                 event["category"] = category
                 event["calendar_name"] = custom_name
                 event["color"] = color
-            all_events.extend(events)
+            all_events.extend(drop_summary_events(events))
 
         return all_events, source_type
     except Exception as e:
@@ -276,7 +288,7 @@ def load_all_events_from_cache(kind="time"):
                 cached_df["category"] = category
                 cached_df["calendar_name"] = custom_name
                 cached_df["color"] = color
-                all_events.extend(cached_df.to_dict("records"))
+                all_events.extend(drop_summary_events(cached_df.to_dict("records")))
 
         return all_events if all_events else None, source_type
     except Exception as e:

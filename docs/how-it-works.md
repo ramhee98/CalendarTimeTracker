@@ -25,6 +25,7 @@ A 3-day trip stored as one event counts as 72 hours, and the same meeting in two
 - **⚖️ Data accuracy** (sidebar on Home, Compare Periods, Trends and AI Insights, and Settings → 📊 Data & display): count all-day and multi-day events fully, or exclude them. Events longer than a configurable number of hours (default 16) also count as long. The choice applies to every page.
 - **Ignore events marked as free**: leaves out events whose availability is "Free" (iCal `TRANSP:TRANSPARENT`) on every page. Sync once after turning it on, so the cache knows which events are free.
 - **🩺 Data Quality** on Home lists long events in the selected range, overlapping events grouped by calendar pair, and the total double-counted hours.
+- **Oura summaries**: the all-day monthly summaries of [oura-sleep-ical](https://github.com/ramhee98/oura-sleep-ical) and the daily and monthly overviews of [oura-activity-ical](https://github.com/ramhee98/oura-activity-ical) are left out on every page (they stay in the cache), so they don't count as 24 hours of sleep or activity.
 - **Range edges**: an event that starts before or ends after the selected date range only counts with its in-range part, on every page.
 
 ## Free time

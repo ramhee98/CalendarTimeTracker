@@ -9,7 +9,7 @@ import os
 import requests
 import calendar
 from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response, is_free_event
-from utils import select_month_range, normalize_time, ensure_ics_content, drop_free_events, render_health_banner
+from utils import SUMMARY_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, render_health_banner
 from calendar_health import FeedError, check_ics_text, feed_stats, fetch_feed, record_check, record_failure
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
@@ -95,6 +95,8 @@ def load_events_from_cache(url, calendar_name):
     if cached_df.empty:
         return []
     
+    if "uid" in cached_df:
+        cached_df = cached_df[~cached_df["uid"].astype(str).str.startswith(SUMMARY_UID_PREFIXES)]
     events = []
     for _, row in cached_df.iterrows():
         # Handle column name - CSV uses 'event_name', Social Analysis uses 'title'
