@@ -402,6 +402,8 @@ DEFAULT_APP_SETTINGS = {
     # Goals: sleep goals count time in bed ("in_bed", the sleep events'
     # length) or actual sleep ("asleep", the "Sleep: H:MM" in their titles).
     "goals_sleep_measure": "in_bed",
+    # Goals page: default history to evaluate, in weeks for every goal.
+    "goals_history_weeks": 12,
     # Goals: Oura activity goals add the average per weekday ("average") or nothing ("off").
     "goals_activity_estimate": "average",
     # "include" counts all-day / multi-day events fully, "exclude" drops them.
@@ -823,19 +825,22 @@ def goal_estimate(df, goal, kind, first, end, now, settings=None):
     return None
 
 
-def evaluate_goals(df, goals, now, history=12, tags=None, groups=()):
+def evaluate_goals(df, goals, now, history=12, tags=None, groups=(), history_weeks=None):
     """[(goal, result)] for the current period of every goal, as on the Goals
     page and Home: `evaluate_goal` plus, for sleep and oura-activity-ical
     goals, the estimate of what isn't recorded yet (result["expected"],
-    result["estimate_note"])."""
-    from analysis import estimated_goal_status, evaluate_goal
+    result["estimate_note"]). `history` complete periods are evaluated, or
+    with `history_weeks` as many as cover that many weeks for each goal's
+    period (84 days, 12 weeks or 3 months for 12 weeks)."""
+    from analysis import estimated_goal_status, evaluate_goal, history_periods
 
     settings = load_app_settings()
     results = []
     for goal in goals:
         kind = goal_estimate_kind(df, goal, settings)
         frame = goal_frame(df, goal, kind, settings)
-        r = evaluate_goal(frame, goal, now, history, tags, groups)
+        periods = history if history_weeks is None else history_periods(goal.get("period", "week"), history_weeks)
+        r = evaluate_goal(frame, goal, now, periods, tags, groups)
         if kind == "sleep" and settings.get("goals_sleep_measure") == "asleep":
             r["measure"] = "actual sleep"
         if kind:

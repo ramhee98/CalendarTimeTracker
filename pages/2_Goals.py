@@ -113,11 +113,16 @@ if not goals:
 
 # --- Overview ---
 now = pd.Timestamp.now(tz=df["start"].dt.tz)
-history = st.slider("History to evaluate (complete days/weeks/months)", 4, 90, 12)
+app_settings = load_app_settings()
+history_weeks = st.slider(
+    "History to evaluate (weeks)", 4, 104, int(app_settings.get("goals_history_weeks", 12) or 12),
+    help="The same span for every goal: 12 weeks = 84 days for daily goals, 12 weeks for weekly goals and "
+         "3 months for monthly goals. Only complete days, weeks and months count. The default is set in "
+         "Settings → 📊 Data & display.",
+)
 
 with st.spinner("Evaluating goals..."):
-    results = evaluate_goals(df, goals, now, history, tags, tag_groups)
-app_settings = load_app_settings()
+    results = evaluate_goals(df, goals, now, tags=tags, groups=tag_groups, history_weeks=history_weeks)
 
 st.subheader("This Period")
 for goal, r in results:

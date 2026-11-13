@@ -299,7 +299,13 @@ with tab_display:
             format_func=lambda m: "All data" if m == 0 else f"Last {m} month{'s' if m != 1 else ''}",
         )
 
-        st.markdown("**🎯 Goal estimates**")
+        st.markdown("**🎯 Goals**")
+        history_weeks = st.slider(
+            "History to evaluate on the Goals page (weeks)", 4, 104,
+            int(settings.get("goals_history_weeks", 12) or 12),
+            help="Default of the slider on the Goals page: the same span for every goal (12 weeks = 84 days, "
+                 "12 weeks or 3 months).",
+        )
         st.caption("Sleep and Oura activity are recorded after the fact, so their goals add an estimate "
                    "of what isn't recorded yet (Home, Goals, Weekly Review).")
         sleep_modes = list(SLEEP_ESTIMATES)
@@ -341,6 +347,7 @@ with tab_display:
 
         if st.form_submit_button("💾 Save", type="primary"):
             settings.update({
+                "goals_history_weeks": int(history_weeks),
                 "goals_sleep_estimate": sleep_mode,
                 "goals_sleep_plan_calendar": plan_calendar,
                 "goals_sleep_measure": sleep_measure,

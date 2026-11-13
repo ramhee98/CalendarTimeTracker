@@ -341,6 +341,16 @@ def _goal_history(goal, sub, period, first, last):
     return counts.reindex(starts, fill_value=0).astype(float)
 
 
+def history_periods(period, weeks):
+    """Complete periods covering about `weeks` weeks: 7 days per week, weeks
+    as they are, months of 30.4 days (at least 1)."""
+    if period == "day":
+        return weeks * 7
+    if period == "month":
+        return max(1, round(weeks * 7 / DAYS_PER_MONTH))
+    return weeks
+
+
 def evaluate_goal(df, goal, now, history=12, tags=None, groups=()):
     """Progress of one goal for the current period plus its recent history.
 
