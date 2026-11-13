@@ -14,7 +14,10 @@ from urllib.parse import urlparse
 import tzlocal
 from ics import Calendar
 import calendar as cal_module
-from calendar_store import update_event_store, load_cached_events, expand_calendar_events, decode_ics_response, is_free_event
+from calendar_store import (
+    update_event_store, load_cached_events, read_events_csv, get_cache_file_path, expand_calendar_events,
+    decode_ics_response, is_free_event,
+)
 
 
 def get_version():
@@ -271,32 +274,63 @@ def load_all_events(kind="time", sync_all=None, keep_plans=False):
         return None, None
 
 
+def _file_signature(path):
+    """(mtime_ns, size) of `path`, or None if it doesn't exist. Part of the
+    cache keys below, so a sync or import that rewrites a CSV invalidates them."""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cached_events_frame(calendars, kind, keep_plans, signatures):
+    """Events of `kind` from the CSV cache as one DataFrame, with category,
+    calendar name and color. `signatures` (file mtimes and sizes) only serve
+    as cache key. Same rows and columns as building a DataFrame from the
+    per-calendar records of every cache file, in config order."""
+    frames = []
+    for calendar_info in calendars:
+        if calendar_info["type"] != kind:
+            continue
+        cached_df = read_events_csv(get_cache_file_path(calendar_info["url"]))
+        if cached_df.empty:
+            continue
+        cached_df["category"] = calendar_info["category"]
+        cached_df["calendar_name"] = calendar_info["custom_name"]
+        cached_df["color"] = calendar_info["color"]
+        prefixes = SUMMARY_UID_PREFIXES if keep_plans else NOT_TIME_UID_PREFIXES
+        if "uid" in cached_df:
+            # Same rule as drop_summary_events: str(uid or "")
+            uids = cached_df["uid"].map(lambda u: str(u or ""))
+            cached_df = cached_df[~uids.str.startswith(prefixes)]
+        frames.append(cached_df)
+    frames = [f for f in frames if not f.empty]
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def load_events_frame(kind="time", keep_plans=False):
+    """(events DataFrame, source type) of `kind` from the local CSV cache,
+    cached until a cache file or the calendar config changes. The DataFrame
+    is empty without cached events; source type is None without config."""
+    calendar_data, source_type = load_calendar_urls()
+    if not calendar_data:
+        return pd.DataFrame(), None
+    signatures = tuple(_file_signature(get_cache_file_path(c["url"])) for c in calendar_data if c["type"] == kind)
+    return _cached_events_frame(calendar_data, kind, keep_plans, signatures), source_type
+
+
 def load_all_events_from_cache(kind="time", keep_plans=False):
     """Load events of `kind` ("time" or "tags") from the local CSV cache only
     (instant, no network requests)."""
     try:
-        calendar_data, source_type = load_calendar_urls()
-        if not calendar_data:
+        df, source_type = load_events_frame(kind, keep_plans)
+        if source_type is None:
             return None, None
-
-        all_events = []
-        for calendar_info in calendar_data:
-            if calendar_info["type"] != kind:
-                continue
-            url = calendar_info["url"]
-            custom_name = calendar_info["custom_name"]
-            category = calendar_info["category"]
-            color = calendar_info["color"]
-            
-            # Load from local CSV cache (no URL fetching)
-            cached_df = load_cached_events(url)
-            if not cached_df.empty:
-                cached_df["category"] = category
-                cached_df["calendar_name"] = custom_name
-                cached_df["color"] = color
-                all_events.extend(drop_summary_events(cached_df.to_dict("records"), keep_plans))
-
-        return all_events if all_events else None, source_type
+        return (df.to_dict("records") if not df.empty else None), source_type
     except Exception as e:
         st.error(f"An error occurred while loading cached events: {e}")
         return None, None
@@ -891,10 +925,9 @@ def load_tag_occurrences():
     """
     from analysis import TAG_COLUMNS, drop_tags, merge_tag_variants, tag_occurrences
 
-    events, _ = load_all_events_from_cache("tags")
-    if not events:
+    df, _ = load_events_frame("tags")
+    if df.empty:
         return pd.DataFrame(columns=TAG_COLUMNS)
-    df = pd.DataFrame(events)
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     df = normalize_time(df, tz="local")
     occ = tag_occurrences(df)
@@ -989,10 +1022,9 @@ def save_tag_groups(groups):
 def load_raw_events(kind="time"):
     """Events of `kind` from the cache with local times and display calendar
     names, without the data-accuracy rules (long and free events kept)."""
-    events, _ = load_all_events_from_cache(kind, keep_plans=True)
-    if not events:
+    df, _ = load_events_frame(kind, keep_plans=True)
+    if df.empty:
         return pd.DataFrame(columns=["calendar", "event_name", "start", "end", "free"])
-    df = pd.DataFrame(events)
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     return normalize_time(df, tz="local")
 

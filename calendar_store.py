@@ -217,7 +217,11 @@ def repair_mojibake(text):
 
 
 def load_cached_events(url):
-    path = get_cache_file_path(url)
+    return read_events_csv(get_cache_file_path(url))
+
+
+def read_events_csv(path):
+    """Events of one CSV cache file (empty DataFrame if missing or empty)."""
     if os.path.exists(path) and os.path.getsize(path) > 0:
         try:
             df = pd.read_csv(path, parse_dates=["start", "end"])
