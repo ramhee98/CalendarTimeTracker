@@ -1079,7 +1079,8 @@ def slot_parts(settings, now, time_events=None, tag_events=None, buffer_minutes=
     of (lo, hi): {"busy": events of blocking calendars (widened by the
     buffer), "off": weekly blocked times + sleep, "nights": (night, bed,
     wake, source) rows for display}. `buffer_minutes` overrides the setting."""
-    from analysis import GO_TO_BED_UID_PREFIX, busy_intervals, merge_intervals, schedule_intervals, sleep_intervals, sleep_plan
+    from analysis import (GO_TO_BED_UID_PREFIX, busy_intervals, merge_intervals, schedule_intervals, sleep_intervals,
+                          sleep_pair_index, sleep_plan, usual_sleep)
 
     time_events = load_raw_events("time") if time_events is None else time_events
     if "uid" in time_events:
@@ -1119,11 +1120,18 @@ def slot_parts(settings, now, time_events=None, tag_events=None, buffer_minutes=
         settings.get("slots_sleep_mode") == "markers" and settings.get("slots_wake_mode") == "fixed") else None
     buffer = settings.get("slots_buffer_minutes", 0) if buffer_minutes is None else buffer_minutes
 
+    fallback = settings.get("slots_sleep_fallback", True)
+    prepared = {}
+
     def sleep_for(lo, hi):
         if settings.get("slots_sleep_mode", "none") == "none":
             return [], []
+        if not prepared:
+            # Same for every (lo, hi), e.g. each day on the Focus page.
+            prepared["usual"] = usual_sleep(pairs, now, tz=tz) if fallback else {}
+            prepared["index"] = sleep_pair_index(pairs)
         return sleep_intervals(pairs, lo, hi, tz, now, settings.get("slots_winddown_minutes", 0),
-                               settings.get("slots_sleep_fallback", True), fixed_wake, plan=plan)
+                               fallback, fixed_wake, plan=plan, usual=prepared["usual"], index=prepared["index"])
 
     return {
         "busy": lambda lo, hi: busy_intervals(time_events, lo, hi, rule_for,

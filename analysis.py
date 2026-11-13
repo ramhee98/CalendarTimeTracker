@@ -9,6 +9,7 @@ import re
 from datetime import timedelta
 
 import pandas as pd
+from bisect import bisect_left
 
 DAY = pd.Timedelta(days=1)
 
@@ -1034,7 +1035,15 @@ def usual_night(d, usual, tz, wake_times=None):
     return bed, wake
 
 
-def sleep_intervals(pairs, lo, hi, tz, now, winddown_minutes=0, fallback=True, wake_times=None, plan=None):
+def sleep_pair_index(pairs):
+    """`pairs` prepared for repeated `sleep_intervals` calls: (pairs sorted by
+    bedtime, their bedtimes, the longest sleep)."""
+    ordered = sorted(pairs)
+    return ordered, [b for b, _ in ordered], max((w - b for b, w in ordered), default=pd.Timedelta(0))
+
+
+def sleep_intervals(pairs, lo, hi, tz, now, winddown_minutes=0, fallback=True, wake_times=None, plan=None,
+                    usual=None, index=None):
     """Blocked sleep time in [lo, hi): every (bed, wake) pair, starting
     `winddown_minutes` before bed. With `fallback`, nights without data use
     the usual bedtime and wake-up time of that night (`usual_sleep`), ending
@@ -1044,12 +1053,25 @@ def sleep_intervals(pairs, lo, hi, tz, now, winddown_minutes=0, fallback=True, w
 
     Returns (intervals, nights) where nights lists (night date, bed, wake,
     source) for display; source is "event", "plan" or "usual".
+
+    For many calls with the same pairs (one per day), pass `usual` (the
+    `usual_sleep` of the pairs) and `index` (`sleep_pair_index`) so neither
+    is computed again for every call.
     """
     winddown = pd.Timedelta(minutes=winddown_minutes)
-    sleeps = [(_night_of(b), b, w, "event") for b, w in pairs
+    candidates = pairs
+    if index is not None:
+        # Only pairs with a bedtime near [lo, hi) can pass the test below.
+        ordered, begins, longest = index
+        candidates = ordered[bisect_left(begins, lo - DAY - winddown - longest):
+                             bisect_left(begins, hi + DAY + winddown)]
+    sleeps = [(_night_of(b), b, w, "event") for b, w in candidates
               if w + winddown > lo - DAY and b - winddown < hi + DAY]
     covered = {d for d, b, w, _ in sleeps if _is_night(b, w)}
-    usual = usual_sleep(pairs, now, tz=tz) if fallback else {}
+    if not fallback:
+        usual = {}
+    elif usual is None:
+        usual = usual_sleep(pairs, now, tz=tz)
     plan = plan or {}
     if usual or plan:
         d = (lo - DAY).date()
