@@ -694,9 +694,10 @@ def goal_estimate_kind(df, goal, settings=None):
 
 
 def goal_frame(df, goal, kind):
-    """`df` as a goal of `kind` counts it: activity goals count only timed
-    workouts, not oura-activity-ical's all-day daily and monthly summaries."""
-    if kind != "activity":
+    """`df` as a goal of `kind` counts it: sleep and activity goals count
+    only timed events, not the all-day daily and monthly summaries of
+    oura-sleep-ical ("💤 Sleep Summary") and oura-activity-ical."""
+    if kind not in ("sleep", "activity"):
         return df
     from analysis import is_all_day
     return df[~((df["calendar"] == goal["name"]) & is_all_day(df["start"], df["end"]))]
