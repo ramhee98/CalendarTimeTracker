@@ -529,10 +529,12 @@ def slot_settings_problems(data):
     is_int = lambda lo, hi: (lambda v: isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi)
     for key in ("slots_free_blocks", "slots_new_calendars_block", "slots_all_day_blocks", "slots_sleep_fallback"):
         check(key, lambda v: isinstance(v, bool), "true or false")
-    for key in ("slots_sleep_calendar", "slots_marker_calendar", "slots_bed_text", "slots_wake_text"):
+    for key in ("slots_sleep_calendar", "slots_marker_calendar", "slots_plan_calendar", "slots_bed_text",
+                "slots_wake_text"):
         check(key, lambda v: isinstance(v, str), "a text")
     check("slots_blocking_mode", lambda v: v in ("all", "custom"), '"all" or "custom"')
-    check("slots_sleep_mode", lambda v: v in ("none", "calendar", "markers"), '"none", "calendar" or "markers"')
+    check("slots_sleep_mode", lambda v: v in ("none", "calendar", "calendar_plan", "markers"),
+          '"none", "calendar", "calendar_plan" or "markers"')
     check("slots_wake_mode", lambda v: v in ("event", "fixed"), '"event" or "fixed"')
     check("slots_winddown_minutes", is_int(0, 240), "a whole number from 0 to 240")
     check("slots_min_minutes", is_int(5, 480), "a whole number from 5 to 480")
@@ -656,15 +658,17 @@ def render_slots_tab():
     # --- Sleep ---
     st.markdown("**Sleep**")
     sleep_modes = {"none": "Only the weekly blocks above", "calendar": "A sleep calendar",
+                   "calendar_plan": "A sleep calendar + bedtime plan",
                    "markers": "\"Going to bed\" / \"waking up\" events"}
     sleep_mode = st.radio("Sleep comes from", list(sleep_modes), format_func=sleep_modes.get, horizontal=True,
                           index=list(sleep_modes).index(settings["slots_sleep_mode"])
                           if settings["slots_sleep_mode"] in sleep_modes else 0, key="slots_sleep_mode")
     sleep_calendar, marker_calendar = settings["slots_sleep_calendar"], settings["slots_marker_calendar"]
+    plan_calendar = settings.get("slots_plan_calendar", "")
     bed_text, wake_mode = settings["slots_bed_text"], settings["slots_wake_mode"]
     wake_text, wake_times = settings["slots_wake_text"], dict(settings["slots_wake_times"])
     winddown, fallback = settings["slots_winddown_minutes"], settings["slots_sleep_fallback"]
-    if sleep_mode == "calendar":
+    if sleep_mode in ("calendar", "calendar_plan"):
         if not all_calendars:
             st.info("No calendars configured.")
         else:
@@ -674,6 +678,16 @@ def render_slots_tab():
                 "Sleep calendar", all_calendars,
                 index=all_calendars.index(sleep_calendar) if sleep_calendar in all_calendars else guess,
                 key="slots_sleep_calendar", help="Every event in it counts as sleep, from its start to its end.",
+            )
+        if sleep_mode == "calendar_plan":
+            options = [""] + all_calendars
+            plan_calendar = st.selectbox(
+                "Bedtime plan calendar", options,
+                index=options.index(plan_calendar) if plan_calendar in options else 0,
+                format_func=lambda c: c or "Automatic (go_to_bed calendars)", key="slots_plan_calendar",
+                help="Nights without recorded sleep use the planned bedtime and wake-up time of a go_to_bed "
+                     "calendar (🛏️ Go to bed / ⏰ Wake up events); Automatic finds it by its event IDs. "
+                     "Neither the sleep calendar nor the plan counts as busy.",
             )
     elif sleep_mode == "markers":
         options = [""] + all_calendars
@@ -726,6 +740,7 @@ def render_slots_tab():
         "slots_sleep_mode": sleep_mode,
         "slots_sleep_calendar": sleep_calendar,
         "slots_marker_calendar": marker_calendar,
+        "slots_plan_calendar": plan_calendar,
         "slots_bed_text": str(bed_text).strip(),
         "slots_wake_mode": wake_mode,
         "slots_wake_text": str(wake_text).strip(),
@@ -759,7 +774,7 @@ def render_slots_tab():
                 if nights:
                     st.dataframe(pd.DataFrame([{
                         "Night of": f"{n:%a %d.%m.}", "Bed": f"{bed:%a %H:%M}", "Wake": f"{wake:%a %H:%M}",
-                        "From": "event" if src == "event" else "usual times",
+                        "From": {"event": "event", "plan": "bedtime plan"}.get(src, "usual times"),
                     } for n, bed, wake, src in nights]), hide_index=True, use_container_width=True)
                 else:
                     st.info("No sleep found: check the calendar or the event names, and sync.")
@@ -772,7 +787,7 @@ def render_slots_tab():
             problems.append("Enter the text of your going-to-bed events.")
         if sleep_mode == "markers" and wake_mode == "event" and not new_settings["slots_wake_text"]:
             problems.append("Enter the text of your waking-up events, or use a fixed time per day.")
-        if sleep_mode == "calendar" and not sleep_calendar:
+        if sleep_mode in ("calendar", "calendar_plan") and not sleep_calendar:
             problems.append("Pick a sleep calendar.")
         for p in problems:
             st.error(p)

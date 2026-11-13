@@ -962,26 +962,32 @@ def usual_night(d, usual, tz, wake_times=None):
     return bed, wake
 
 
-def sleep_intervals(pairs, lo, hi, tz, now, winddown_minutes=0, fallback=True, wake_times=None):
+def sleep_intervals(pairs, lo, hi, tz, now, winddown_minutes=0, fallback=True, wake_times=None, plan=None):
     """Blocked sleep time in [lo, hi): every (bed, wake) pair, starting
     `winddown_minutes` before bed. With `fallback`, nights without data use
     the usual bedtime and wake-up time of that night (`usual_sleep`), ending
-    at the fixed wake-up time instead if `wake_times` has one.
+    at the fixed wake-up time instead if `wake_times` has one. Nights in
+    `plan` ({night: (bed, wake)}, see `sleep_plan`) without a recorded sleep
+    use the planned night, with or without `fallback`.
 
     Returns (intervals, nights) where nights lists (night date, bed, wake,
-    source) for display; source is "event" or "usual".
+    source) for display; source is "event", "plan" or "usual".
     """
     winddown = pd.Timedelta(minutes=winddown_minutes)
     sleeps = [(_night_of(b), b, w, "event") for b, w in pairs
               if w + winddown > lo - DAY and b - winddown < hi + DAY]
     covered = {d for d, b, w, _ in sleeps if _is_night(b, w)}
     usual = usual_sleep(pairs, now, tz=tz) if fallback else {}
-    if usual:
+    plan = plan or {}
+    if usual or plan:
         d = (lo - DAY).date()
         while d <= hi.date():
             if d not in covered:
-                bed, wake = usual_night(d, usual, tz, wake_times)
-                sleeps.append((d, bed, wake, "usual"))
+                if d in plan:
+                    sleeps.append((d, *plan[d], "plan"))
+                elif usual:
+                    bed, wake = usual_night(d, usual, tz, wake_times)
+                    sleeps.append((d, bed, wake, "usual"))
             d += timedelta(days=1)
     intervals = [(max(bed - winddown, lo), min(wake, hi)) for _, bed, wake, _ in sleeps
                  if wake > lo and bed - winddown < hi]

@@ -60,7 +60,7 @@ if days.empty:
     st.stop()
 
 sleep_like = sorted(c for c in raw["calendar"].dropna().unique() if any(w in c.casefold() for w in ("sleep", "schlaf")))
-if sleep_like and settings.get("slots_sleep_mode", "none") != "calendar":
+if sleep_like and settings.get("slots_sleep_mode", "none") not in ("calendar", "calendar_plan"):
     st.info(f"**{sleep_like[0]}** looks like a sleep calendar but counts as busy time here. Choose it under "
             "Settings → 💡 Free slots → Sleep comes from → A sleep calendar, so sleep isn't counted as busy.")
 if (days["awake_h"] >= 23.9).mean() > 0.5:

@@ -33,7 +33,7 @@ A 3-day trip stored as one event counts as 72 hours, and the same meeting in two
 [Goals](pages/goals.md) (suggested slots) and [Focus](pages/focus.md) need to know when you're free. That comes from Settings → 💡 Free slots ([details](pages/settings.md#-free-slots)):
 
 - **Busy**: events of blocking calendars; per calendar, only events marked *busy* or also those marked *free*.
-- **Off**: fixed blocks every week (e.g. a night 22:00–07:00 or Mon 08:00–10:00) and sleep, from a sleep calendar or from "going to bed" / "waking up" events, with optional wind-down time before bed. Nights without data use your usual sleep times of the last 4 weeks.
+- **Off**: fixed blocks every week (e.g. a night 22:00–07:00 or Mon 08:00–10:00) and sleep, from a sleep calendar (optionally with a go_to_bed bedtime plan for the nights not recorded yet) or from "going to bed" / "waking up" events, with optional wind-down time before bed. Other nights without data use your usual sleep times of the last 4 weeks.
 - **Free**: awake time that isn't busy.
 
 ## Privacy

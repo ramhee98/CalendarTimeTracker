@@ -32,7 +32,7 @@ What counts as busy for the suggested slots on the [Goals](goals.md) page and fo
 
 - **Blocking calendars**: all calendars (also ones added later), or per calendar whether it blocks and whether its events marked as *free* block too (otherwise only *busy* events do). Also whether calendars added later block, and whether all-day events block the whole day. Tag calendars never block.
 - **Blocked every week**: fixed times per weekday, e.g. Mon 08:00–10:00 and 13:00–15:00, or for Weekdays, Weekend or Every day. A block that ends before it starts runs past midnight (night 22:00–07:00). Rows add up: a Weekdays row and a Friday row both apply on Fridays.
-- **Sleep**: from a sleep calendar, or from events whose name contains e.g. "going to bed" (sleep start) and "waking up" (sleep end) or a fixed wake-up time per weekday. Optional time to do nothing before going to bed (e.g. 30 min). Nights without data (like future ones) use your usual sleep times of the last 4 weeks; sleeps under 3 hours count as naps.
+- **Sleep**: from a sleep calendar, from a sleep calendar plus a bedtime plan ([go_to_bed](https://github.com/ramhee98/go_to_bed): nights not recorded yet use the planned bedtime and wake-up time, and neither calendar counts as busy), or from events whose name contains e.g. "going to bed" (sleep start) and "waking up" (sleep end) or a fixed wake-up time per weekday. Optional time to do nothing before going to bed (e.g. 30 min). Nights without data (like future ones) use your usual sleep times of the last 4 weeks; sleeps under 3 hours count as naps.
 - **Suggestions**: shortest slot, buffer around events and suggestions per goal.
 - **👀 Preview**: blocked and free time of the next 7 days and the detected nights, updated as you edit.
 

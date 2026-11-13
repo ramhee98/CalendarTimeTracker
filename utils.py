@@ -460,6 +460,9 @@ DEFAULT_APP_SETTINGS = {
     # "markers" (events containing slots_bed_text, ended by slots_wake_text
     # or the fixed slots_wake_times).
     "slots_sleep_mode": "none",
+    # Sleep source "calendar_plan": the go_to_bed calendar with the planned
+    # nights ("" = every calendar with go-to-bed- UIDs).
+    "slots_plan_calendar": "",
     "slots_sleep_calendar": "",
     "slots_marker_calendar": "",  # "" = any calendar
     "slots_bed_text": "going to bed",
@@ -697,7 +700,8 @@ def is_sleep_goal(goal, settings=None):
     if goal.get("type") != "calendar":
         return False
     settings = load_app_settings() if settings is None else settings
-    sleep_calendar = settings.get("slots_sleep_calendar") if settings.get("slots_sleep_mode") == "calendar" else None
+    sleep_calendar = settings.get("slots_sleep_calendar") if settings.get("slots_sleep_mode") in (
+        "calendar", "calendar_plan") else None
     return goal["name"] == sleep_calendar or any(w in goal["name"].casefold() for w in ("sleep", "schlaf"))
 
 
@@ -991,13 +995,13 @@ def sleep_pairs(settings, time_events=None, tag_events=None):
     from analysis import sleep_from_calendar, sleep_from_markers
 
     mode = settings.get("slots_sleep_mode", "none")
-    if mode not in ("calendar", "markers"):
+    if mode not in ("calendar", "calendar_plan", "markers"):
         return []
     frames = [f for f in (time_events, tag_events) if f is not None and not f.empty]
     if not frames:
         return []
     events = pd.concat([f[["calendar", "event_name", "start", "end"]] for f in frames], ignore_index=True)
-    if mode == "calendar":
+    if mode in ("calendar", "calendar_plan"):
         return sleep_from_calendar(events[events["calendar"] == settings.get("slots_sleep_calendar")])
     marker_calendar = settings.get("slots_marker_calendar") or ""
     if marker_calendar:
@@ -1017,19 +1021,34 @@ def slot_parts(settings, now, time_events=None, tag_events=None, buffer_minutes=
     of (lo, hi): {"busy": events of blocking calendars (widened by the
     buffer), "off": weekly blocked times + sleep, "nights": (night, bed,
     wake, source) rows for display}. `buffer_minutes` overrides the setting."""
-    from analysis import busy_intervals, merge_intervals, schedule_intervals, sleep_intervals
+    from analysis import GO_TO_BED_UID_PREFIX, busy_intervals, merge_intervals, schedule_intervals, sleep_intervals, sleep_plan
 
     time_events = load_raw_events("time") if time_events is None else time_events
-    needs_tags = settings.get("slots_sleep_mode") in ("calendar", "markers")
+    mode = settings.get("slots_sleep_mode", "none")
+    needs_tags = mode in ("calendar", "calendar_plan", "markers")
     if tag_events is None and needs_tags:
         tag_events = load_raw_events("tags")
     tz = now.tz
     base_rule = slot_block_rule(settings)
-    sleep_calendar = settings.get("slots_sleep_calendar") if settings.get("slots_sleep_mode") == "calendar" else None
+    sleep_calendar = settings.get("slots_sleep_calendar") if mode in ("calendar", "calendar_plan") else None
+    plan, plan_calendars = {}, set()
+    if mode == "calendar_plan" and not time_events.empty:
+        name = settings.get("slots_plan_calendar") or ""
+        if name:
+            plan_events = time_events[time_events["calendar"] == name]
+        elif "uid" in time_events:
+            plan_events = time_events[time_events["uid"].astype(str).str.startswith(GO_TO_BED_UID_PREFIX)]
+        else:
+            plan_events = time_events.iloc[0:0]
+        plan = sleep_plan(plan_events)
+        plan_calendars = set(plan_events["calendar"].unique())
 
     def rule_for(calendar):
-        # The sleep calendar is sleep (with its wind-down), not busy time.
-        return None if sleep_calendar and calendar == sleep_calendar else base_rule(calendar)
+        # The sleep calendar is sleep (with its wind-down), and the bedtime
+        # plan's markers are a plan, so neither is busy time.
+        if (sleep_calendar and calendar == sleep_calendar) or calendar in plan_calendars:
+            return None
+        return base_rule(calendar)
 
     pairs = sleep_pairs(settings, time_events, tag_events)
     fixed_wake = settings.get("slots_wake_times") if (
@@ -1040,7 +1059,7 @@ def slot_parts(settings, now, time_events=None, tag_events=None, buffer_minutes=
         if settings.get("slots_sleep_mode", "none") == "none":
             return [], []
         return sleep_intervals(pairs, lo, hi, tz, now, settings.get("slots_winddown_minutes", 0),
-                               settings.get("slots_sleep_fallback", True), fixed_wake)
+                               settings.get("slots_sleep_fallback", True), fixed_wake, plan=plan)
 
     return {
         "busy": lambda lo, hi: busy_intervals(time_events, lo, hi, rule_for,
