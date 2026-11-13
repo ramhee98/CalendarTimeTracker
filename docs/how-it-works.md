@@ -26,6 +26,7 @@ A 3-day trip stored as one event counts as 72 hours, and the same meeting in two
 - **Ignore events marked as free**: leaves out events whose availability is "Free" (iCal `TRANSP:TRANSPARENT`) on every page. Sync once after turning it on, so the cache knows which events are free.
 - **🩺 Data Quality** on Home lists long events in the selected range, overlapping events grouped by calendar pair, and the total double-counted hours.
 - **Oura summaries**: the all-day monthly summaries of [oura-sleep-ical](https://github.com/ramhee98/oura-sleep-ical) and the daily and monthly overviews of [oura-activity-ical](https://github.com/ramhee98/oura-activity-ical) are left out on every page (they stay in the cache), so they don't count as 24 hours of sleep or activity.
+- **Bedtime plans**: the 15-minute "🛏️ Go to bed" and "⏰ Wake up" events of [go_to_bed](https://github.com/ramhee98/go_to_bed) are a plan, not time spent: they don't count on any page and never block. They're used as the sleep plan for goals and free slots, and as going-to-bed / waking-up markers.
 - **Range edges**: an event that starts before or ends after the selected date range only counts with its in-range part, on every page.
 
 ## Free time

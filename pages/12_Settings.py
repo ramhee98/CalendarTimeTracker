@@ -249,8 +249,8 @@ with tab_calendars:
 # Data & display
 # =====================================================================
 def time_calendar_names():
-    """Names of the time calendars in the local cache."""
-    events, _ = load_all_events_from_cache("time")
+    """Names of the time calendars in the local cache (go_to_bed ones too)."""
+    events, _ = load_all_events_from_cache("time", keep_plans=True)
     return sorted({normalize_calendar_name(e["calendar_name"]) for e in events if e.get("calendar_name")}, key=str.casefold)
 
 

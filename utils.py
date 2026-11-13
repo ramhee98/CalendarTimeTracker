@@ -219,14 +219,20 @@ def is_tag_calendar(calendar):
 # (marked free), but would count as 24 hours of sleep or activity and block
 # whole days, so the app leaves them out everywhere (they stay in the cache).
 SUMMARY_UID_PREFIXES = ("oura-monthly-summary-", "oura-activity-summary-", "oura-daily-activity-")
+# go_to_bed's 15-minute "🛏️ Go to bed" / "⏰ Wake up" events are a plan, not
+# time spent: left out of the pages, but used as sleep plan and markers.
+PLAN_UID_PREFIXES = ("go-to-bed-",)
+NOT_TIME_UID_PREFIXES = SUMMARY_UID_PREFIXES + PLAN_UID_PREFIXES
 
 
-def drop_summary_events(events):
-    """`events` (list of dicts) without generated summary events."""
-    return [e for e in events if not str(e.get("uid") or "").startswith(SUMMARY_UID_PREFIXES)]
+def drop_summary_events(events, keep_plans=False):
+    """`events` (list of dicts) without generated summary events and, unless
+    `keep_plans`, without go_to_bed plan events."""
+    prefixes = SUMMARY_UID_PREFIXES if keep_plans else NOT_TIME_UID_PREFIXES
+    return [e for e in events if not str(e.get("uid") or "").startswith(prefixes)]
 
 
-def load_all_events(kind="time", sync_all=None):
+def load_all_events(kind="time", sync_all=None, keep_plans=False):
     """Sync calendars and return the events of `kind` ("time" or "tags").
 
     By default every configured calendar is synced, so a Sync on any page
@@ -257,7 +263,7 @@ def load_all_events(kind="time", sync_all=None):
                 event["category"] = category
                 event["calendar_name"] = custom_name
                 event["color"] = color
-            all_events.extend(drop_summary_events(events))
+            all_events.extend(drop_summary_events(events, keep_plans))
 
         return all_events, source_type
     except Exception as e:
@@ -265,7 +271,7 @@ def load_all_events(kind="time", sync_all=None):
         return None, None
 
 
-def load_all_events_from_cache(kind="time"):
+def load_all_events_from_cache(kind="time", keep_plans=False):
     """Load events of `kind` ("time" or "tags") from the local CSV cache only
     (instant, no network requests)."""
     try:
@@ -288,7 +294,7 @@ def load_all_events_from_cache(kind="time"):
                 cached_df["category"] = category
                 cached_df["calendar_name"] = custom_name
                 cached_df["color"] = color
-                all_events.extend(drop_summary_events(cached_df.to_dict("records")))
+                all_events.extend(drop_summary_events(cached_df.to_dict("records"), keep_plans))
 
         return all_events if all_events else None, source_type
     except Exception as e:
@@ -963,7 +969,7 @@ def save_tag_groups(groups):
 def load_raw_events(kind="time"):
     """Events of `kind` from the cache with local times and display calendar
     names, without the data-accuracy rules (long and free events kept)."""
-    events, _ = load_all_events_from_cache(kind)
+    events, _ = load_all_events_from_cache(kind, keep_plans=True)
     if not events:
         return pd.DataFrame(columns=["calendar", "event_name", "start", "end", "free"])
     df = pd.DataFrame(events)
@@ -1024,6 +1030,9 @@ def slot_parts(settings, now, time_events=None, tag_events=None, buffer_minutes=
     from analysis import GO_TO_BED_UID_PREFIX, busy_intervals, merge_intervals, schedule_intervals, sleep_intervals, sleep_plan
 
     time_events = load_raw_events("time") if time_events is None else time_events
+    if "uid" in time_events:
+        # go_to_bed's plan events are never busy (pages leave them out too).
+        time_events = time_events[~time_events["uid"].astype(str).str.startswith(PLAN_UID_PREFIXES)]
     mode = settings.get("slots_sleep_mode", "none")
     needs_tags = mode in ("calendar", "calendar_plan", "markers")
     if tag_events is None and needs_tags:
@@ -1031,15 +1040,18 @@ def slot_parts(settings, now, time_events=None, tag_events=None, buffer_minutes=
     tz = now.tz
     base_rule = slot_block_rule(settings)
     sleep_calendar = settings.get("slots_sleep_calendar") if mode in ("calendar", "calendar_plan") else None
+    # Sleep comes from the raw cache: pages leave out go_to_bed's plan
+    # events, which are the markers or the plan here.
+    sleep_events = load_raw_events("time") if mode != "none" else time_events.iloc[0:0]
     plan, plan_calendars = {}, set()
-    if mode == "calendar_plan" and not time_events.empty:
+    if mode == "calendar_plan" and not sleep_events.empty:
         name = settings.get("slots_plan_calendar") or ""
         if name:
-            plan_events = time_events[time_events["calendar"] == name]
-        elif "uid" in time_events:
-            plan_events = time_events[time_events["uid"].astype(str).str.startswith(GO_TO_BED_UID_PREFIX)]
+            plan_events = sleep_events[sleep_events["calendar"] == name]
+        elif "uid" in sleep_events:
+            plan_events = sleep_events[sleep_events["uid"].astype(str).str.startswith(GO_TO_BED_UID_PREFIX)]
         else:
-            plan_events = time_events.iloc[0:0]
+            plan_events = sleep_events.iloc[0:0]
         plan = sleep_plan(plan_events)
         plan_calendars = set(plan_events["calendar"].unique())
 
@@ -1050,7 +1062,7 @@ def slot_parts(settings, now, time_events=None, tag_events=None, buffer_minutes=
             return None
         return base_rule(calendar)
 
-    pairs = sleep_pairs(settings, time_events, tag_events)
+    pairs = sleep_pairs(settings, sleep_events, tag_events)
     fixed_wake = settings.get("slots_wake_times") if (
         settings.get("slots_sleep_mode") == "markers" and settings.get("slots_wake_mode") == "fixed") else None
     buffer = settings.get("slots_buffer_minutes", 0) if buffer_minutes is None else buffer_minutes
