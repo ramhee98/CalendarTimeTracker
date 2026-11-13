@@ -7,8 +7,9 @@ from utils import (
     load_tag_occurrences, load_tag_groups, load_app_settings, slot_blocker,
 )
 from analysis import (
-    PERIODS, evaluate_goal, format_goal_amount, goal_target_text, is_tag_goal, period_label,
-    slots_to_ics, suggest_goal_slots,
+    PERIODS, estimated_goal_status, evaluate_goal, expected_sleep, format_goal_amount, goal_events,
+    goal_target_text, is_tag_goal, local_midnight, period_label, sleep_from_calendar, slots_to_ics,
+    suggest_goal_slots, usual_sleep_text,
 )
 
 st.set_page_config(page_title="Goals", layout="wide")
@@ -119,34 +120,69 @@ history = st.slider("History to evaluate (complete days/weeks/months)", 4, 90, 1
 with st.spinner("Evaluating goals..."):
     results = [(g, evaluate_goal(df, g, now, history, tags, tag_groups)) for g in goals]
 
+app_settings = load_app_settings()
+sleep_calendar = app_settings.get("slots_sleep_calendar") if app_settings.get("slots_sleep_mode") == "calendar" else None
+
+
+def is_sleep_goal(goal):
+    """Calendar goals for the sleep calendar (Settings → 💡 Free slots) or a calendar named like one."""
+    if goal["type"] != "calendar":
+        return False
+    return goal["name"] == sleep_calendar or any(w in goal["name"].casefold() for w in ("sleep", "schlaf"))
+
+
+# Sleep isn't booked ahead, so sleep goals add the usual sleep of the
+# nights that aren't recorded yet to what's done and booked.
+sleep_notes = []
+tz = now.tz
+for goal, r in results:
+    if not is_sleep_goal(goal):
+        continue
+    pairs = sleep_from_calendar(goal_events(df, goal))
+    lo = local_midnight(r["period_start"], tz)
+    hi = local_midnight(r["period_end"] + pd.Timedelta(days=1), tz)
+    extra, nights = expected_sleep(pairs, lo, hi, now, tz)
+    if not pairs:
+        continue
+    r["expected"] = r["booked"] + extra
+    r["status"], r["status_label"] = estimated_goal_status(goal, r["done"], r["expected"])
+    usual = usual_sleep_text(pairs, now, tz)
+    if nights:
+        sleep_notes.append(f"**{goal['name']}**: {len(nights)} night(s) not recorded yet are estimated "
+                           f"(+{extra:.1f}h) from your usual sleep, {usual}.")
+
 st.subheader("This Period")
 for goal, r in results:
     render_goal_progress(goal, r)
+for note in sleep_notes:
+    st.caption("😴 " + note)
 
 overview = pd.DataFrame([{
     "Goal": target_label(g["type"], g["name"]),
     "Target": f"{goal_target_text(g)} / {g['period']}",
     "Done": format_goal_amount(g, r["done"]),
-    "Booked": format_goal_amount(g, r["booked"]),
+    "Booked": (f"~{format_goal_amount(g, r['expected'])} expected" if "expected" in r
+               else format_goal_amount(g, r["booked"])),
     "Status": r["status_label"],
     "Streak": f"{r['streak']} {g['period']}{'s' if r['streak'] != 1 else ''}",
     "Hit rate": f"{r['met_count']}/{r['history_count']}" if r["history_count"] else "—",
 } for g, r in results])
 st.dataframe(overview, use_container_width=True, hide_index=True)
-st.caption("Done = hours (or tags) already passed this period, Booked = done plus events still scheduled. "
+st.caption("Done = hours (or tags) already passed this period, Booked = done plus events still scheduled; "
+           "for sleep goals, plus the estimated nights not recorded yet (median of the last 4 weeks). "
            "Streak and hit rate count complete periods only. Tags are read from the local cache; "
            "🔄 Sync Calendars updates them too unless Sync is limited to the page's calendars.")
 
 # --- Free-slot suggestions ---
 st.subheader("💡 Suggested slots")
-time_min_goals = [g for g in goals if not is_tag_goal(g) and g["min"] is not None]
+time_min_goals = [g for g in goals if not is_tag_goal(g) and g["min"] is not None and not is_sleep_goal(g)]
 if not time_min_goals:
-    st.caption("Suggestions are made for calendar and category goals with a Min.")
+    st.caption("Suggestions are made for calendar and category goals with a Min (not for sleep).")
 else:
     plan = st.radio("Plan for", ["current", "next"], horizontal=True, key="slots_plan",
                     format_func={"current": "The rest of this day / week / month",
                                  "next": "The next day / week / month"}.get)
-    slot_settings = load_app_settings()
+    slot_settings = app_settings
     # Blocking uses every event (long and free ones too): the free-slot
     # settings decide what blocks, not the data-accuracy rules.
     raw_df = build_events_df(all_events, {"long_events": "include", "ignore_free_events": False})

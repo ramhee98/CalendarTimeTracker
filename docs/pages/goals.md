@@ -18,12 +18,13 @@ Set targets and see whether you're living the week you intended, with free slots
 ## What you see
 
 - **This period**: done (already passed) vs booked (done plus events still scheduled), with a status: reached, on track, behind, over budget.
+- **😴 Sleep goals**: sleep isn't booked ahead, so goals for your sleep calendar (the one chosen in [Settings → 💡 Free slots](settings.md#-free-slots), or a calendar named "sleep" or "schlaf") show the **expected** total instead: done plus your usual sleep for every night not recorded yet, including last night if your tracker hasn't added it yet. Usual sleep is the median bedtime and wake-up time of that night of the week over the last 4 weeks; with fewer than 3 nights, weeknights or Fri/Sat nights are used together, and without recent sleep the latest 4 weeks with data. A caption shows the times used. Streaks and hit rate only count recorded sleep, and sleep goals get no slot suggestions.
 - **History**: a bar chart of past periods (met / missed) with the target lines, the current streak, hit rate and average. The history slider sets how many complete periods are evaluated.
 - Progress bars for every goal also appear at the top of [Home](home.md), and weekly goals in the [Weekly Review](weekly-review.md).
 
 ## 💡 Suggested slots
 
-For every calendar or category goal with a **Min** that booked events don't cover yet, the page suggests free slots that would close the gap:
+For every calendar or category goal with a **Min** (except sleep goals) that booked events don't cover yet, the page suggests free slots that would close the gap:
 
 - in the rest of this day, week or month, or in the next one
 - preferring the weekdays and hours you usually spend on that goal, spread over different days

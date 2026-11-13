@@ -681,6 +681,9 @@ def render_goal_progress(goal, result):
         if result["booked"] != result["done"]:
             amounts += f" ({format_goal_amount(goal, result['booked'])} incl. planned)"
         amounts += " of"
+    elif "expected" in result:
+        amounts = (f"{format_goal_amount(goal, result['done'])} done, "
+                   f"~{format_goal_amount(goal, result['expected'])} expected of")
     else:
         amounts = (f"{format_goal_amount(goal, result['done'])} done, "
                    f"{format_goal_amount(goal, result['booked'])} booked of")

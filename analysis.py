@@ -265,6 +265,20 @@ def goal_status(goal, done, booked):
     return "met", "✅ Within the limit" if is_tag_goal(goal) else "✅ Within budget"
 
 
+def estimated_goal_status(goal, done, expected):
+    """Like `goal_status`, with `expected` = done + booked + estimated
+    (e.g. sleep nights not recorded yet): (key, label)."""
+    key, label = goal_status(goal, done, expected)
+    mn = goal.get("min")
+    if key == "at_risk":
+        return key, "⚠️ Expected over budget"
+    if key == "on_track":
+        return key, "📈 On track (estimated)"
+    if key == "behind" and mn is not None:
+        return key, f"⚠️ ~{mn - expected:.1f}h short (estimated)"
+    return key, label
+
+
 def tag_goal_occurrences(tags, goal, groups=()):
     """Tag occurrences counted by a tag or tag group goal.
 
@@ -887,29 +901,68 @@ def _is_night(bed, wake):
     return wake - bed >= pd.Timedelta(hours=NIGHT_MIN_HOURS)
 
 
-def usual_sleep(pairs, now, days=28):
-    """Median bedtime (minutes after noon) and sleep length (minutes) per
-    weekday of the evening, from the nights (not naps) of the last `days`;
-    weekdays without data use the median over all days. {} without data."""
-    recent = [(b, w) for b, w in pairs if now - pd.Timedelta(days=days) <= b < now and _is_night(b, w)]
-    if not recent:
+SLEEP_MIN_NIGHTS = 3  # nights a weekday needs before its own median is used
+WEEKEND_NIGHTS = (4, 5)  # Friday and Saturday evenings
+
+
+def _noon(d, tz):
+    return _local_time(d, 12 * 60, tz)
+
+
+def usual_sleep(pairs, now, days=28, tz=None):
+    """Usual bedtime and wake-up time per night, from the nights (not naps)
+    of the last `days` before `now`, or of the latest `days` with sleep data
+    if there are none.
+
+    Returns {evening weekday: (bed, wake)} with both as minutes after noon of
+    the evening (an 07:00 wake-up is 1140), or {} without data. Each value is
+    the median of that weekday if it has at least SLEEP_MIN_NIGHTS nights,
+    else of the weekday or weekend nights (Fri/Sat evenings), else of all.
+    """
+    nights = sorted((b, w) for b, w in pairs if b < now and _is_night(b, w))
+    if not nights:
         return {}
-    rows = pd.DataFrame({
-        "weekday": [_night_of(b).weekday() for b, _ in recent],
-        "bed": [((b - pd.Timedelta(hours=12)).hour * 60 + b.minute) for b, _ in recent],
-        "length": [(w - b).total_seconds() / 60 for b, w in recent],
-    })
-    overall = (rows["bed"].median(), rows["length"].median())
-    by_day = rows.groupby("weekday")[["bed", "length"]].median()
-    return {wd: (by_day.loc[wd, "bed"], by_day.loc[wd, "length"]) if wd in by_day.index else overall
-            for wd in range(7)}
+    recent = [(b, w) for b, w in nights if b >= now - pd.Timedelta(days=days)]
+    if not recent:
+        last = nights[-1][0]
+        recent = [(b, w) for b, w in nights if b >= last - pd.Timedelta(days=days)]
+    tz = tz if tz is not None else recent[0][0].tz
+    rows = []
+    for b, w in recent:
+        noon = _noon(_night_of(b), tz)
+        rows.append({"weekday": _night_of(b).weekday(),
+                     "bed": (b - noon).total_seconds() / 60, "wake": (w - noon).total_seconds() / 60})
+    rows = pd.DataFrame(rows)
+    rows["weekend"] = rows["weekday"].isin(WEEKEND_NIGHTS)
+
+    def median_of(sub):
+        return float(sub["bed"].median()), float(sub["wake"].median())
+
+    usual = {}
+    for wd in range(7):
+        own = rows[rows["weekday"] == wd]
+        group = rows[rows["weekend"] == (wd in WEEKEND_NIGHTS)]
+        sub = own if len(own) >= SLEEP_MIN_NIGHTS else group if len(group) >= SLEEP_MIN_NIGHTS else rows
+        usual[wd] = median_of(sub)
+    return usual
+
+
+def usual_night(d, usual, tz, wake_times=None):
+    """(bed, wake) of the evening of date `d` from `usual_sleep`; a fixed
+    wake-up time (`wake_times`) replaces the usual one."""
+    bed_min, wake_min = usual[d.weekday()]
+    bed = _local_time(d, 12 * 60 + bed_min, tz)
+    wake = _next_wake_time(bed, wake_times, tz) if wake_times else None
+    if wake is None or wake - bed > pd.Timedelta(hours=16):
+        wake = _local_time(d, 12 * 60 + wake_min, tz)
+    return bed, wake
 
 
 def sleep_intervals(pairs, lo, hi, tz, now, winddown_minutes=0, fallback=True, wake_times=None):
     """Blocked sleep time in [lo, hi): every (bed, wake) pair, starting
     `winddown_minutes` before bed. With `fallback`, nights without data use
-    the usual bedtime and length of that weekday (`usual_sleep`), ending at
-    the fixed wake-up time instead if `wake_times` has one.
+    the usual bedtime and wake-up time of that night (`usual_sleep`), ending
+    at the fixed wake-up time instead if `wake_times` has one.
 
     Returns (intervals, nights) where nights lists (night date, bed, wake,
     source) for display; source is "event" or "usual".
@@ -918,21 +971,72 @@ def sleep_intervals(pairs, lo, hi, tz, now, winddown_minutes=0, fallback=True, w
     sleeps = [(_night_of(b), b, w, "event") for b, w in pairs
               if w + winddown > lo - DAY and b - winddown < hi + DAY]
     covered = {d for d, b, w, _ in sleeps if _is_night(b, w)}
-    usual = usual_sleep(pairs, now) if fallback else {}
+    usual = usual_sleep(pairs, now, tz=tz) if fallback else {}
     if usual:
         d = (lo - DAY).date()
         while d <= hi.date():
             if d not in covered:
-                bed_min, length = usual[d.weekday()]
-                bed = _local_time(d, 12 * 60 + bed_min, tz)
-                wake = _next_wake_time(bed, wake_times, tz) if wake_times else None
-                if wake is None or wake - bed > pd.Timedelta(hours=16):
-                    wake = bed + pd.Timedelta(minutes=length)
+                bed, wake = usual_night(d, usual, tz, wake_times)
                 sleeps.append((d, bed, wake, "usual"))
             d += timedelta(days=1)
     intervals = [(max(bed - winddown, lo), min(wake, hi)) for _, bed, wake, _ in sleeps
                  if wake > lo and bed - winddown < hi]
     return merge_intervals(intervals), sorted(sleeps)
+
+
+def expected_sleep(pairs, lo, hi, now, tz, wake_times=None):
+    """Estimated sleep in [lo, hi) that isn't recorded yet.
+
+    Every night after the last recorded sleep that ended before `now` gets
+    the usual bedtime and wake-up time, counted in full: sleep trackers add
+    a night only after waking, so last night may still be missing. Returns
+    (hours, nights) with nights as (night date, bed, wake), or (0, []) when
+    there's no sleep data to estimate from.
+    """
+    usual = usual_sleep(pairs, now, tz=tz)
+    if not usual:
+        return 0.0, []
+    past = [w for b, w in pairs if w <= now]
+    last_end = max(past) if past else None
+    covered = {_night_of(b) for b, w in pairs if _is_night(b, w)}
+    recorded = merge_intervals(list(pairs))
+    hours, nights = 0.0, []
+    d = (lo - DAY).date()
+    while d < hi.date():
+        if d not in covered:
+            bed, wake = usual_night(d, usual, tz, wake_times)
+            if (last_end is None or bed >= last_end) and wake > lo and bed < hi:
+                parts = [(max(bed, lo), min(wake, hi))]
+                for rs, re in recorded:
+                    parts = [p for s, e in parts for p in _subtract([(s, e)], rs, re)]
+                part_hours = sum((e - s).total_seconds() for s, e in parts) / 3600
+                if part_hours > 0:
+                    hours += part_hours
+                    nights.append((d, bed, wake))
+        d += timedelta(days=1)
+    return hours, nights
+
+
+def usual_sleep_text(pairs, now, tz):
+    """"in bed ~23:10, up ~07:00 on weeknights · ~00:20–08:30 on weekends"
+    style summary of `usual_sleep`, or "" without data."""
+    usual = usual_sleep(pairs, now, tz=tz)
+    if not usual:
+        return ""
+
+    def clock(minutes):
+        m = int(round(minutes)) + 12 * 60
+        return f"{m // 60 % 24:02d}:{m % 60:02d}"
+
+    def span(wds):
+        bed = sum(usual[w][0] for w in wds) / len(wds)
+        wake = sum(usual[w][1] for w in wds) / len(wds)
+        return f"~{clock(bed)}–{clock(wake)}"
+
+    week, weekend = span([0, 1, 2, 3, 6]), span(list(WEEKEND_NIGHTS))
+    if week == weekend:
+        return f"{week} every night"
+    return f"{week} on weeknights (Sun–Thu) · {weekend} on Fri/Sat nights"
 
 
 # --- Goal preferences and slot picking ---
