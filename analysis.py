@@ -297,7 +297,10 @@ def tag_goal_occurrences(tags, goal, groups=()):
     group = next((g for g in groups if g["name"] == goal["name"]), None)
     if group is None:
         return tags.iloc[0:0]
-    return tags[tags["tag"].isin(tag_group_members(group, tags["tag"].unique()))]
+    members = weighted_members(group, tags["tag"].unique())
+    out = tags[tags["tag"].isin(members)].copy()
+    out["weight"] = out["tag"].map(members).astype(float)
+    return out
 
 
 def goal_events(df, goal, tags=None, groups=()):
@@ -317,7 +320,7 @@ def goal_amount(goal, sub, first, end, now=None, tz=None):
         mask = (sub["date"] >= first) & (sub["date"] < end)
         if now is not None:
             mask &= sub["date"] <= now.date()
-        return float(mask.sum())
+        return float(_weights(sub)[mask].sum())
     hi = local_midnight(end, tz)
     if now is not None:
         hi = min(now, hi)
@@ -334,7 +337,7 @@ def _goal_history(goal, sub, period, first, last):
     while ps <= last:
         starts.append(ps)
         ps = next_period_start(period, ps)
-    counts = sub["date"].map(lambda d: period_start(period, d)).value_counts()
+    counts = _weights(sub).groupby(sub["date"].map(lambda d: period_start(period, d))).sum()
     return counts.reindex(starts, fill_value=0).astype(float)
 
 
@@ -440,7 +443,9 @@ def booked_weeks(df, group_col, today, weeks_ahead=4, baseline_weeks=8, busy_rat
 # --- Tag calendars (markers such as Oura tags) ---
 
 SUMMARY_UID_PREFIX = "oura-tag-summary-"
-TAG_COLUMNS = ["tag", "calendar", "date", "hour", "weekday", "all_day", "start"]
+# `weight` is how much an occurrence counts: 1, or a tag group's weight
+# for that tag (e.g. a Doppio counting 2 in ☕ Coffee).
+TAG_COLUMNS = ["tag", "calendar", "date", "hour", "weekday", "all_day", "start", "weight"]
 
 
 def tag_occurrences(df):
@@ -465,6 +470,7 @@ def tag_occurrences(df):
     occ["tag"] = occ["event_name"].fillna("").astype(str).str.strip().replace("", "Untitled")
     if "calendar" not in occ:
         occ["calendar"] = ""
+    occ["weight"] = 1.0
     return occ[TAG_COLUMNS].reset_index(drop=True)
 
 
@@ -489,20 +495,25 @@ def tag_summary(occ, start_date, end_date, today):
         return pd.DataFrame(columns=columns)
     days = (end_date - start_date).days + 1
     gap_end = min(end_date, today)
-    past = occ[occ["date"] <= today]
+    # Totals add up weights; a day counts as "with tag" if its weights add
+    # up to more than 0 (a day with only weight-0 tags is a day without).
+    past = occ[(occ["date"] <= today) & (_weights(occ) > 0)]
     rows = []
     for tag, group in in_range.groupby("tag"):
+        total = float(_weights(group).sum())
+        per_day = _weights(group).groupby(group["date"]).sum()
+        day_dates = per_day[per_day > 0].index
         seen = past.loc[past["tag"] == tag, "date"]
         last = seen.max() if not seen.empty else None
         rows.append({
             "Tag": tag,
-            "Total": len(group),
-            "Avg / week": round(len(group) / (days / 7), 2),
-            "Days with tag": group["date"].nunique(),
-            "% of days": round(group["date"].nunique() / days * 100, 1),
+            "Total": int(total) if total == int(total) else round(total, 2),
+            "Avg / week": round(total / (days / 7), 2),
+            "Days with tag": len(day_dates),
+            "% of days": round(len(day_dates) / days * 100, 1),
             "Last seen": last,
             "Days since last": (today - last).days if last is not None else None,
-            "Longest gap (days)": _longest_gap(group["date"], start_date, gap_end),
+            "Longest gap (days)": _longest_gap(day_dates, start_date, gap_end),
         })
     return pd.DataFrame(rows, columns=columns).sort_values(["Total", "Tag"], ascending=[False, True]).reset_index(drop=True)
 
@@ -525,7 +536,7 @@ def tag_counts_by_period(occ, period, start_date, end_date):
         keys = in_range["date"].map(lambda d: period_start(period, d))
     if in_range.empty:
         return pd.DataFrame(index=pd.Index(periods, name="period_start"))
-    counts = in_range.groupby([keys.rename("period_start"), "tag"]).size().unstack(fill_value=0)
+    counts = _weights(in_range).groupby([keys.rename("period_start"), in_range["tag"]]).sum().unstack(fill_value=0)
     return counts.reindex(periods, fill_value=0).rename_axis("period_start")
 
 
@@ -564,21 +575,65 @@ def tag_group_members(group, tags):
     }
 
 
-def resolve_tag_groups(groups, tags):
-    """{display label: sorted member tags} for groups matching at least one
-    of `tags`. A group named like a real tag that isn't one of its members
-    is labelled "<name> (group)" so the two never merge."""
+def _weights(occ):
+    """Weight of each occurrence (1 where the column is missing)."""
+    if "weight" in occ:
+        return occ["weight"].astype(float).fillna(1.0)
+    return pd.Series(1.0, index=occ.index)
+
+
+def tag_weight(group, tag):
+    """How much `tag` counts in `group`: the weight whose key matches the tag
+    like a keyword does (full name or name without the emoji, any case),
+    else one keyed by its emoji alone, else 1."""
+    weights = {_norm_tag(k): float(v) for k, v in (group.get("weights") or {}).items()}
+    if not weights:
+        return 1.0
+    keys = _tag_keys(tag)
+    emoji = _leading_emoji(tag)
+    emoji_key = _norm_tag(emoji) if emoji else None
+    for key in keys - {emoji_key}:
+        if key in weights:
+            return weights[key]
+    if emoji_key in weights:
+        return weights[emoji_key]
+    return 1.0
+
+
+def weighted_members(group, tags):
+    """{tag: weight} of the group's members among `tags`."""
+    return {t: tag_weight(group, t) for t in tag_group_members(group, tags)}
+
+
+def member_text(members, limit=None):
+    """"☕️ Flat White ×2, ☕ Coffee" from {tag: weight}; weight 1 is implicit."""
+    names = sorted(members)
+    shown = names if limit is None else names[:limit]
+    text = ", ".join(t if members[t] == 1 else f"{t} ×{members[t]:g}" for t in shown)
+    return text + (f" … ({len(names)})" if limit is not None and len(names) > limit else "")
+
+
+def _resolve(groups, tags):
+    """[(label, group, {member: weight})] for groups matching at least one of
+    `tags`; see `resolve_tag_groups` for the labels."""
     tags = set(tags)
-    resolved = {}
+    out = []
     for group in groups:
-        members = tag_group_members(group, tags)
+        members = weighted_members(group, tags)
         if not members:
             continue
         label = group["name"]
         if label in tags and label not in members:
             label += " (group)"
-        resolved[label] = sorted(members)
-    return resolved
+        out.append((label, group, members))
+    return out
+
+
+def resolve_tag_groups(groups, tags):
+    """{display label: {member tag: weight}} for groups matching at least one
+    of `tags`. A group named like a real tag that isn't one of its members
+    is labelled "<name> (group)" so the two never merge."""
+    return {label: members for label, _, members in _resolve(groups, tags)}
 
 
 def apply_tag_groups(occ, groups, mode="grouped"):
@@ -595,9 +650,10 @@ def apply_tag_groups(occ, groups, mode="grouped"):
     if mode == "tags" or not groups or occ.empty:
         return occ
     parts, grouped_tags = [], set()
-    for label, members in resolve_tag_groups(groups, occ["tag"].unique()).items():
+    for label, _, members in _resolve(groups, occ["tag"].unique()):
         grouped_tags |= set(members)
         part = occ[occ["tag"].isin(members)].copy()
+        part["weight"] = part["tag"].map(members).astype(float)
         part["tag"] = label
         parts.append(part)
     if mode == "grouped":

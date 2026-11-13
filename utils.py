@@ -945,11 +945,24 @@ def _clean_group(group):
     keywords = [str(k).strip() for k in group.get("keywords", []) if str(k).strip()]
     if not name or not (tags or keywords):
         return None
-    return {"name": name, "tags": tags, "keywords": keywords}
+    cleaned = {"name": name, "tags": tags, "keywords": keywords}
+    weights = {}
+    for key, value in (group.get("weights") or {}).items() if isinstance(group.get("weights"), dict) else []:
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if str(key).strip() and value >= 0 and value != 1:
+            weights[str(key).strip()] = int(value) if value == int(value) else value
+    if weights:
+        cleaned["weights"] = weights
+    return cleaned
 
 
 def load_tag_groups():
-    """Tag groups as a list of {name, tags, keywords} dicts, in saved order."""
+    """Tag groups as a list of {name, tags, keywords[, weights]} dicts, in
+    saved order. `weights` maps a tag, tag name or emoji to how much it
+    counts in the group (missing = 1)."""
     try:
         with open(TAG_GROUPS_FILE, "r", encoding="utf-8") as f:
             raw = json.load(f).get("groups", [])

@@ -7,7 +7,7 @@ import streamlit as st
 from analysis import (
     apply_tag_groups, default_chart_labels, drop_tags, merge_tag_variants, period_label, resolve_tag_groups, suggest_tag_groups, suggest_tag_groups_by_name,
     tag_counts_by_period,
-    tag_group_members, tag_occurrences, tag_summary,
+    tag_group_members, tag_occurrences, tag_summary, weighted_members, member_text,
 )
 from utils import (
     load_app_settings, load_calendar_urls, load_events_for_page, load_tag_groups, normalize_calendar_name, normalize_time,
@@ -72,6 +72,24 @@ if "tag_groups_draft" not in st.session_state:
 draft = st.session_state.tag_groups_draft
 
 
+def parse_weights(text):
+    """({name: weight}, [errors]) from "Flat White=2, Decaf=0"."""
+    weights, errors = {}, []
+    for part in [p.strip() for p in str(text).split(",") if p.strip()]:
+        name, sep, value = part.rpartition("=")
+        name = name.strip()
+        try:
+            number = float(value.replace(",", "."))
+        except ValueError:
+            number = None
+        if not sep or not name or number is None or number < 0:
+            errors.append(f'"{part}" isn\'t a weight: write name=number, e.g. Flat White=2 (0 or more).')
+            continue
+        if number != 1:
+            weights[name] = int(number) if number == int(number) else number
+    return weights, errors
+
+
 def _add_to_draft(group):
     draft.append(dict(group, _id=st.session_state.tag_groups_next_id))
     st.session_state.tag_groups_next_id += 1
@@ -83,22 +101,37 @@ with st.expander("🗂️ Tag groups", expanded=not groups):
         "or if it matches one of the group's **keywords** exactly (comma-separated, any case, with or without "
         "the emoji): `Flat White` matches ☕️ Flat White but not ☕️ Decaf Flat White. A keyword that is just "
         "an emoji, like `☕`, matches every tag starting with it, including future ones. A tag may be in "
-        "several groups and then counts in each."
+        "several groups and then counts in each. **Weights** say how much a tag counts in the group, matched "
+        "like keywords: `Flat White=2, Doppio=2, Decaf=0` counts a flat white as 2 (e.g. shots), a decaf as "
+        "0 and everything else as 1. Days with only weight-0 tags count as days without the group."
     )
     for g in list(draft):
         gid = g["_id"]
-        c_name, c_tags, c_kw, c_del = st.columns([2, 4, 2, 0.6])
+        c_name, c_tags, c_kw, c_w, c_del = st.columns([2, 3.4, 1.8, 1.8, 0.6])
         g["name"] = c_name.text_input("Name", g["name"], key=f"tg_name_{gid}", placeholder="☕ Coffee").strip()
         g["tags"] = c_tags.multiselect("Tags", sorted(set(all_tags) | set(g["tags"])), default=g["tags"],
                                        key=f"tg_tags_{gid}")
         keywords = c_kw.text_input("Keywords", ", ".join(g["keywords"]), key=f"tg_kw_{gid}", placeholder="Flat White, Cappuccino")
         g["keywords"] = [k.strip() for k in keywords.split(",") if k.strip()]
+        # The typed text is kept as is, so the field doesn't reset while a
+        # weight is invalid or written differently ("2.0" vs "2").
+        g.setdefault("_weights_text", ", ".join(f"{k}={v:g}" for k, v in (g.get("weights") or {}).items()))
+        g["_weights_text"] = c_w.text_input("Weights", g["_weights_text"], key=f"tg_w_{gid}",
+                                            placeholder="Flat White=2, Decaf=0",
+                                            help="name=weight, comma-separated. Unlisted tags count 1; 0 doesn't count.")
+        weights, g["_errors"] = parse_weights(g["_weights_text"])
+        if weights:
+            g["weights"] = weights
+        else:
+            g.pop("weights", None)
         c_del.write("")
         if c_del.button("🗑️", key=f"tg_del_{gid}", help="Remove this group"):
             draft.remove(g)
             st.rerun()
-        members = sorted(tag_group_members(g, all_tags))
-        st.caption(f"Matches {len(members)} tag(s): {', '.join(members)}" if members else "Matches no tags yet.")
+        members = weighted_members(g, all_tags)
+        st.caption(f"Matches {len(members)} tag(s): {member_text(members)}" if members else "Matches no tags yet.")
+        for error in g["_errors"]:
+            st.caption(f"⚠️ {error}")
 
     b_add, b_suggest, b_names, b_save = st.columns(4)
     if b_add.button("➕ Add group", use_container_width=True):
@@ -130,18 +163,19 @@ with st.expander("🗂️ Tag groups", expanded=not groups):
             names.add(g["name"])
             if not g["tags"] and not g["keywords"]:
                 problems.append(f"Group {i}: pick at least one tag or enter a keyword.")
+            problems += [f"Group {i}: {error}" for error in g.get("_errors", [])]
         if problems:
             for problem in problems:
                 st.error(problem)
         else:
-            save_tag_groups([{k: v for k, v in g.items() if k != "_id"} for g in draft])
+            save_tag_groups([{k: v for k, v in g.items() if not k.startswith("_")} for g in draft])
             empty = [g["name"] for g in draft if not tag_group_members(g, all_tags)]
             st.session_state.setdefault("tags_flash", []).append(
                 f"Saved {len(draft)} group(s)."
                 + (f" Not matching any tag yet: {', '.join(empty)}." if empty else "")
             )
             st.rerun()
-    saved_view = [{k: v for k, v in g.items() if k != "_id"} for g in draft]
+    saved_view = [{k: v for k, v in g.items() if not k.startswith("_")} for g in draft]
     if saved_view != groups:
         st.caption("⚠️ Unsaved changes: the charts below use the saved groups.")
 
@@ -172,9 +206,7 @@ summary = tag_summary(view, start_date, end_date, today)
 if mode != "tags":
     def _members(label):
         members = resolved.get(label)
-        if not members:
-            return "—"
-        return ", ".join(members[:4]) + (f" … ({len(members)})" if len(members) > 4 else "")
+        return member_text(members, limit=4) if members else "—"
     summary.insert(1, "Members", summary["Tag"].map(_members))
 by_count = summary["Tag"].tolist()
 
@@ -224,6 +256,8 @@ st.download_button("Download summary as CSV", shown.to_csv(index=False).encode("
                    f"tags_{start_date}_{end_date}.csv", "text/csv")
 st.caption(f"{len(raw_in_range)} tags from {start_date} to {end_date}. A multi-day tag counts once, on its first day."
            + (" A tag in several groups counts in each group." if mode != "tags" and resolved else "")
+           + (" Group totals and charts use the groups' weights." if mode != "tags"
+              and any(g.get("weights") for g in groups) else "")
            + (f" {hidden_count} hidden tag(s) are left out (Settings → Tags)." if hidden_count else ""))
 
 if not selected:
@@ -267,7 +301,7 @@ TAG_AXIS = alt.Axis(labelOverlap=False, labelLimit=300, labelFontSize=12)
 # --- Weekday pattern ---
 weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 st.subheader("Weekday pattern")
-by_weekday = sel.groupby(["tag", "weekday"]).size().reset_index(name="count")
+by_weekday = sel.assign(count=sel["weight"]).groupby(["tag", "weekday"])["count"].sum().reset_index()
 base = alt.Chart(by_weekday).encode(
     x=alt.X("weekday:N", sort=weekdays, title=""),
     y=alt.Y("tag:N", sort=selected, title="", axis=TAG_AXIS),
@@ -287,7 +321,7 @@ if timed.empty:
     st.caption("None of the selected tags has a time of day (all-day tags only).")
 else:
     timed["hour"] = timed["hour"].astype(int)
-    by_hour = timed.groupby(["tag", "hour"]).size().reset_index(name="count")
+    by_hour = timed.assign(count=timed["weight"]).groupby(["tag", "hour"])["count"].sum().reset_index()
     base = alt.Chart(by_hour).encode(
         x=alt.X("hour:O", title="Hour of day", scale=alt.Scale(domain=list(range(24)))),
         y=alt.Y("tag:N", sort=selected, title="", axis=TAG_AXIS),

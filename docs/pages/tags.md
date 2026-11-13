@@ -21,6 +21,7 @@ Combine tags, e.g. every coffee type into ☕ Coffee, or 🍷 Wine and 🍺 Beer
 - **Members**: pick tags, and/or add **keywords** that match tag names exactly, ignoring case and the emoji: `Flat White` matches ☕️ Flat White but not ☕️ Decaf Flat White. A keyword that is just an emoji, like `☕`, matches every tag starting with it, including coffee types you log in the future.
 - **💡 Suggest from emojis** creates one group per emoji shared by several tags. **🔤 Suggest from names** creates one group per word or phrase shared by several tag names (e.g. Decaf, Flat White), with the matching tag names as keywords.
 - A tag may be in several groups (e.g. Coffee and Decaf) and then counts in each.
+- **Weights**: how much a tag counts in a group, matched like keywords, e.g. `Flat White=2, Doppio=2, Decaf Flat White=0` in ☕ Coffee counts shots: a flat white or doppio counts 2, a decaf 0, every other member 1. A weight keyed by an emoji (`☕=1.5`) applies to members without their own weight. Group totals, averages, trend and pattern charts, and tag group goals add up the weights; single tags always count 1. Days with only weight-0 tags count as days without the group (e.g. for "Days since last"). The matched tags are listed with their weight (☕️ Flat White ×2).
 - **Show**: groups with the remaining single tags, groups only, or single tags only.
 - Groups are stored in `tag_groups.json` and can be used as [goals](goals.md).
 

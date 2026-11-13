@@ -11,7 +11,7 @@ Set targets and see whether you're living the week you intended, with free slots
 - **Targets**: a **Min**, a **Max** or both, e.g. "Sport ≥ 4h per week" or "Work ≤ 45h per week".
 - **What a goal counts**:
   - 📅 a **calendar** or 🗂️ a **category**: hours
-  - 🏷️ a **tag** or 🔖 a **tag group** from the [Tags](tags.md) page: how often it occurs, e.g. "☕ Coffee ≤ 2× per day" or "🧘 Meditation ≥ 5× per week". Tag names match the Tags page (variants merged, hidden tags left out); a tag group goal follows the group's current members.
+  - 🏷️ a **tag** or 🔖 a **tag group** from the [Tags](tags.md) page: how often it occurs, e.g. "☕ Coffee ≤ 2× per day" or "🧘 Meditation ≥ 5× per week". Tag names match the Tags page (variants merged, hidden tags left out); a tag group goal follows the group's current members and weights (with Flat White = 2, "☕ Coffee ≤ 4× per day" means 4 shots).
 - **Per day, week or month**: weeks run Monday–Sunday.
 - **Editing**: open **✏️ Edit goals** and pick the target from one list where every entry shows its type, so a calendar and a category with the same name can't be mixed up. Goals are stored in `goals.json`.
 

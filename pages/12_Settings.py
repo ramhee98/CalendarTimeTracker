@@ -1018,6 +1018,14 @@ def validate_config(name, text):
         for i, c in enumerate(data.get("calendars", []), start=1):
             if not isinstance(c, dict) or not str(c.get("url", "")).strip():
                 return f"Calendar {i} needs a \"url\"."
+    if name == "tag_groups.json":
+        for i, g in enumerate(data.get("groups", []), start=1):
+            weights = g.get("weights", {}) if isinstance(g, dict) else {}
+            if not isinstance(weights, dict):
+                return f'Group {i}: "weights" must be an object like {{"Flat White": 2, "Decaf": 0}}.'
+            for key, value in weights.items():
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                    return f'Group {i}: the weight of "{key}" must be a number of 0 or more.'
     if name == "app_settings.json":
         problems = slot_settings_problems(data)
         if problems:
