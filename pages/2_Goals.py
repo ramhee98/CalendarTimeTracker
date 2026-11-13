@@ -206,12 +206,17 @@ st.subheader("History")
 for goal, r in results:
     period = r["period"]
     st.markdown(f"#### {target_label(goal['type'], goal['name'])} · {goal_target_text(goal)} per {period}")
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Current streak", f"{r['streak']} {period}{'s' if r['streak'] != 1 else ''}")
     c2.metric("Hit rate", f"{r['met_count'] / r['history_count'] * 100:.0f}%" if r["history_count"] else "—",
               help=f"Complete {period}s that met the goal")
-    c3.metric(f"Average per {period}",
-              f"{r['history']['value'].mean():.1f}{'×' if is_tag_goal(goal) else 'h'}" if r["history_count"] else "—")
+    unit_suffix = "×" if is_tag_goal(goal) else "h"
+    values = r["history"]["value"]
+    c3.metric(f"Average per {period}", f"{values.mean():.1f}{unit_suffix}" if r["history_count"] else "—",
+              help=f"Mean of the complete {period}s evaluated")
+    c4.metric(f"Median per {period}", f"{values.median():.1f}{unit_suffix}" if r["history_count"] else "—",
+              help=f"The middle {period}: half were higher, half lower. Unlike the average, one unusual "
+                   f"{period} barely moves it.")
 
     unit = "Times" if is_tag_goal(goal) else "Hours"
     hist = r["history"].reset_index()
