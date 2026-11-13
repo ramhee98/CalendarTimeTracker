@@ -9,7 +9,7 @@ import requests
 import streamlit as st
 import tzlocal
 
-from analysis import DAY_GROUPS, WEEKDAY_ABBR, is_all_day, merge_tag_variants, tag_occurrences
+from analysis import DAY_GROUPS, SLEEP_ESTIMATES, WEEKDAY_ABBR, is_all_day, merge_tag_variants, tag_occurrences
 from calendar_store import decode_ics_response, get_cache_file_path, hash_url
 from utils import (
     CALENDARS_JSON, DEFAULT_APP_SETTINGS, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings,
@@ -248,6 +248,12 @@ with tab_calendars:
 # =====================================================================
 # Data & display
 # =====================================================================
+def time_calendar_names():
+    """Names of the time calendars in the local cache."""
+    events, _ = load_all_events_from_cache("time")
+    return sorted({normalize_calendar_name(e["calendar_name"]) for e in events if e.get("calendar_name")}, key=str.casefold)
+
+
 with tab_display:
     settings = load_app_settings()
     with st.form("display_settings"):
@@ -293,8 +299,42 @@ with tab_display:
             format_func=lambda m: "All data" if m == 0 else f"Last {m} month{'s' if m != 1 else ''}",
         )
 
+        st.markdown("**🎯 Goal estimates**")
+        st.caption("Sleep and Oura activity are recorded after the fact, so their goals add an estimate "
+                   "of what isn't recorded yet (Home, Goals, Weekly Review).")
+        sleep_modes = list(SLEEP_ESTIMATES)
+        sleep_mode = st.radio(
+            "Sleep goals: estimate nights not recorded yet from",
+            sleep_modes,
+            index=sleep_modes.index(settings.get("goals_sleep_estimate", "usual"))
+            if settings.get("goals_sleep_estimate") in sleep_modes else 0,
+            format_func=SLEEP_ESTIMATES.get,
+            help="Usual sleep = median bedtime and wake-up time of that night of the week over the last 4 weeks. "
+                 "The bedtime plan comes from a go_to_bed calendar (🛏️ Go to bed / ⏰ Wake up events); nights "
+                 "it doesn't cover use your usual sleep.",
+        )
+        plan_options = [""] + time_calendar_names()
+        current_plan = settings.get("goals_sleep_plan_calendar") or ""
+        plan_calendar = st.selectbox(
+            "Bedtime plan calendar",
+            plan_options if current_plan in plan_options else plan_options + [current_plan],
+            index=(plan_options if current_plan in plan_options else plan_options + [current_plan]).index(current_plan),
+            format_func=lambda c: c or "Automatic (go_to_bed calendars)",
+            help="Automatic finds go_to_bed calendars by their event IDs (go-to-bed-…).",
+        )
+        activity_mode = st.radio(
+            "Oura activity goals",
+            ["average", "off"],
+            index=1 if settings.get("goals_activity_estimate") == "off" else 0,
+            format_func={"average": "Add my average per weekday (last 4 weeks)", "off": "Don't estimate"}.get,
+            horizontal=True,
+        )
+
         if st.form_submit_button("💾 Save", type="primary"):
             settings.update({
+                "goals_sleep_estimate": sleep_mode,
+                "goals_sleep_plan_calendar": plan_calendar,
+                "goals_activity_estimate": activity_mode,
                 "long_events": long_events,
                 "long_event_hours": int(long_hours),
                 "ignore_free_events": bool(ignore_free),

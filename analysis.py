@@ -5,6 +5,7 @@ isolation. Every function expects the columns produced by the pages
 (`start`, `end` as tz-aware timestamps, `duration_hours`, `calendar`,
 `category`, `event_name`).
 """
+import re
 from datetime import timedelta
 
 import pandas as pd
@@ -984,17 +985,67 @@ def sleep_intervals(pairs, lo, hi, tz, now, winddown_minutes=0, fallback=True, w
     return merge_intervals(intervals), sorted(sleeps)
 
 
-def expected_sleep(pairs, lo, hi, now, tz, wake_times=None):
+GO_TO_BED_UID_PREFIX = "go-to-bed-"
+SLEEP_ESTIMATES = {
+    "usual": "My usual sleep (last 4 weeks)",
+    "plan": "My bedtime plan, else my usual sleep",
+    "plan_wake": "Usual bedtime, planned wake-up time",
+    "off": "Don't estimate",
+}
+
+
+def is_go_to_bed(events):
+    """Whether `events` come from go_to_bed (UIDs go-to-bed-bed-… / -wake-…)."""
+    if events.empty or "uid" not in events:
+        return False
+    return bool(events["uid"].astype(str).str.startswith(GO_TO_BED_UID_PREFIX).any())
+
+
+_IN_BED = re.compile(r"\((\d+):(\d{2}) in bed\)")
+
+
+def sleep_plan(events):
+    """Planned nights of a go_to_bed calendar: {night date: (bed, wake)}.
+
+    Bedtime is the start of a "go-to-bed-bed-<wake day>" event, wake-up the
+    start of the "go-to-bed-wake-<wake day>" event of the same wake day, or
+    bedtime plus the "(H:MM in bed)" of its title without one."""
+    if events.empty or "uid" not in events:
+        return {}
+    uid = events["uid"].astype(str)
+    beds = events[uid.str.startswith(GO_TO_BED_UID_PREFIX + "bed-")]
+    wakes = events[uid.str.startswith(GO_TO_BED_UID_PREFIX + "wake-")]
+    wake_of = {u.split("@")[0].rsplit("-wake-", 1)[-1]: t for u, t in zip(wakes["uid"].astype(str), wakes["start"])}
+    plan = {}
+    for u, bed, title in zip(beds["uid"].astype(str), beds["start"], beds["event_name"].astype(str)):
+        wake = wake_of.get(u.split("@")[0].rsplit("-bed-", 1)[-1])
+        if wake is None:
+            m = _IN_BED.search(title)
+            if not m:
+                continue
+            wake = bed + pd.Timedelta(hours=int(m.group(1)), minutes=int(m.group(2)))
+        if bed < wake <= bed + pd.Timedelta(hours=16):
+            plan[_night_of(bed)] = (bed, wake)
+    return plan
+
+
+def expected_sleep(pairs, lo, hi, now, tz, wake_times=None, plan=None, mode="usual"):
     """Estimated sleep in [lo, hi) that isn't recorded yet.
 
     Every night after the last recorded sleep that ended before `now` gets
-    the usual bedtime and wake-up time, counted in full: sleep trackers add
-    a night only after waking, so last night may still be missing. Returns
-    (hours, nights) with nights as (night date, bed, wake), or (0, []) when
-    there's no sleep data to estimate from.
+    an estimate, counted in full: sleep trackers add a night only after
+    waking, so last night may still be missing. `mode` (SLEEP_ESTIMATES):
+    "usual" = usual bedtime and wake-up time (`usual_sleep`); "plan" = the
+    planned night from `plan` ({night: (bed, wake)}, see `sleep_plan`) where
+    there is one, else usual; "plan_wake" = usual bedtime, planned wake-up
+    time; "off" = no estimate. Returns (hours, nights) with nights as
+    (night date, bed, wake, source) and source "usual" or "plan".
     """
+    if mode == "off":
+        return 0.0, []
+    plan = (plan or {}) if mode in ("plan", "plan_wake") else {}
     usual = usual_sleep(pairs, now, tz=tz)
-    if not usual:
+    if not usual and not plan:
         return 0.0, []
     past = [w for b, w in pairs if w <= now]
     last_end = max(past) if past else None
@@ -1003,16 +1054,26 @@ def expected_sleep(pairs, lo, hi, now, tz, wake_times=None):
     hours, nights = 0.0, []
     d = (lo - DAY).date()
     while d < hi.date():
+        night = None
         if d not in covered:
-            bed, wake = usual_night(d, usual, tz, wake_times)
+            if d in plan and mode == "plan":
+                night = (*plan[d], "plan")
+            elif usual:
+                bed, wake = usual_night(d, usual, tz, wake_times)
+                if d in plan and plan[d][1] > bed + pd.Timedelta(hours=NIGHT_MIN_HOURS):
+                    night = (bed, plan[d][1], "plan")
+                else:
+                    night = (bed, wake, "usual")
+        if night is not None:
+            bed, wake, source = night
             if (last_end is None or bed >= last_end) and wake > lo and bed < hi:
                 parts = [(max(bed, lo), min(wake, hi))]
-                for rs, re in recorded:
-                    parts = [p for s, e in parts for p in _subtract([(s, e)], rs, re)]
+                for rs, re_ in recorded:
+                    parts = [p for s, e in parts for p in _subtract([(s, e)], rs, re_)]
                 part_hours = sum((e - s).total_seconds() for s, e in parts) / 3600
                 if part_hours > 0:
                     hours += part_hours
-                    nights.append((d, bed, wake))
+                    nights.append((d, bed, wake, source))
         d += timedelta(days=1)
     return hours, nights
 

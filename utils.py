@@ -376,6 +376,13 @@ def preprocess_dataframe(all_events, select_month_range_func):
 
 APP_SETTINGS_FILE = "app_settings.json"
 DEFAULT_APP_SETTINGS = {
+    # Goals: how sleep goals estimate nights not recorded yet ("usual",
+    # "plan", "plan_wake" or "off", see analysis.SLEEP_ESTIMATES) and which
+    # calendar holds the go_to_bed plan ("" = the one with go-to-bed- UIDs).
+    "goals_sleep_estimate": "usual",
+    "goals_sleep_plan_calendar": "",
+    # Goals: Oura activity goals add the average per weekday ("average") or nothing ("off").
+    "goals_activity_estimate": "average",
     # "include" counts all-day / multi-day events fully, "exclude" drops them.
     "long_events": "include",
     # Events longer than this (hours) count as long even if not all-day.
@@ -703,7 +710,23 @@ def goal_frame(df, goal, kind):
     return df[~((df["calendar"] == goal["name"]) & is_all_day(df["start"], df["end"]))]
 
 
-def goal_estimate(df, goal, kind, first, end, now):
+def sleep_plan_for(settings):
+    """{night: (bed, wake)} from the go_to_bed calendar (the configured one,
+    else every calendar with go-to-bed- UIDs) in the local cache."""
+    from analysis import GO_TO_BED_UID_PREFIX, sleep_plan
+
+    events = load_raw_events("time")
+    if events.empty or "uid" not in events:
+        return {}
+    name = settings.get("goals_sleep_plan_calendar") or ""
+    if name:
+        events = events[events["calendar"] == name]
+    else:
+        events = events[events["uid"].astype(str).str.startswith(GO_TO_BED_UID_PREFIX)]
+    return sleep_plan(events)
+
+
+def goal_estimate(df, goal, kind, first, end, now, settings=None):
     """Estimated amount not recorded yet for a sleep or activity goal from
     date `first` up to date `end` (exclusive), to add to done + booked.
     `df` is the goal's frame (`goal_frame`). Returns {"hours", "note"} or
@@ -711,17 +734,38 @@ def goal_estimate(df, goal, kind, first, end, now):
     from analysis import (WEEKDAY_ABBR, expected_daily, expected_sleep, goal_events, local_midnight,
                           sleep_from_calendar, usual_sleep_text)
 
+    settings = load_app_settings() if settings is None else settings
     sub = goal_events(df, goal)
     tz = now.tz
     if kind == "sleep":
+        mode = settings.get("goals_sleep_estimate", "usual")
         pairs = sleep_from_calendar(sub)
-        if not pairs:
+        if mode == "off" or not pairs:
             return None
-        hours, nights = expected_sleep(pairs, local_midnight(first, tz), local_midnight(end, tz), now, tz)
-        note = (f"😴 **{goal['name']}**: {len(nights)} night(s) not recorded yet are estimated (+{hours:.1f}h) "
-                f"from your usual sleep, {usual_sleep_text(pairs, now, tz)}.") if nights else ""
+        plan = sleep_plan_for(settings) if mode in ("plan", "plan_wake") else {}
+        hours, nights = expected_sleep(pairs, local_midnight(first, tz), local_midnight(end, tz), now, tz,
+                                       plan=plan, mode=mode)
+        note = ""
+        if nights:
+            planned = sum(1 for n in nights if n[3] == "plan")
+            usual = usual_sleep_text(pairs, now, tz)
+            if mode == "plan" and planned:
+                parts = [f"{planned} from your bedtime plan"] if planned else []
+                if len(nights) > planned:
+                    parts.append(f"{len(nights) - planned} from your usual sleep ({usual})")
+                how = " and ".join(parts)
+            elif mode == "plan_wake" and planned:
+                how = (f"from your usual bedtime, with the planned wake-up time for {planned} of them"
+                       f" ({usual})")
+            elif mode in ("plan", "plan_wake"):
+                how = f"no bedtime plan found, so from your usual sleep, {usual}"
+            else:
+                how = f"from your usual sleep, {usual}"
+            note = f"😴 **{goal['name']}**: {len(nights)} night(s) not recorded yet are estimated (+{hours:.1f}h): {how}."
         return {"hours": hours, "note": note}
     if kind == "activity":
+        if settings.get("goals_activity_estimate", "average") == "off":
+            return None
         hours, usual = expected_daily(sub, first, end, now)
         if not usual:
             return None
@@ -749,7 +793,8 @@ def evaluate_goals(df, goals, now, history=12, tags=None, groups=()):
         frame = goal_frame(df, goal, kind)
         r = evaluate_goal(frame, goal, now, history, tags, groups)
         if kind:
-            est = goal_estimate(frame, goal, kind, r["period_start"], r["period_end"] + timedelta(days=1), now)
+            est = goal_estimate(frame, goal, kind, r["period_start"], r["period_end"] + timedelta(days=1), now,
+                                settings)
             if est is not None:
                 r["expected"] = r["booked"] + est["hours"]
                 r["status"], r["status_label"] = estimated_goal_status(goal, r["done"], r["expected"])

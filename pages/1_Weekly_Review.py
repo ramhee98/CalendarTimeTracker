@@ -170,7 +170,7 @@ if weekly_goals:
         done = goal_amount(goal, sub, week, week_end, now=now, tz=tz)
         _, label = goal_status(goal, done, booked)
         amount = format_goal_amount(goal, booked)
-        est = goal_estimate(frame, goal, kind, week, week_end, now) if kind else None
+        est = goal_estimate(frame, goal, kind, week, week_end, now, settings) if kind else None
         if est is not None and est["hours"] > 0:
             _, label = estimated_goal_status(goal, done, booked + est["hours"])
             amount = f"~{format_goal_amount(goal, booked + est['hours'])} expected"
