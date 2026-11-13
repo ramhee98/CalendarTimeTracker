@@ -97,19 +97,20 @@ def load_events_from_cache(url, calendar_name):
     
     if "uid" in cached_df:
         cached_df = cached_df[~cached_df["uid"].astype(str).str.startswith(NOT_TIME_UID_PREFIXES)]
-    events = []
-    for _, row in cached_df.iterrows():
-        # Handle column name - CSV uses 'event_name', Social Analysis uses 'title'
-        title = row.get("event_name", row.get("title", "")) if hasattr(row, 'get') else (row["event_name"] if "event_name" in row.index else "")
-        events.append({
-            "calendar": calendar_name,
-            "title": title if pd.notna(title) else "",
-            "start": row["start"],
-            "end": row["end"],
-            "duration_hours": row["duration_hours"],
-            "free": row.get("free", False),
-        })
-    return events
+    if cached_df.empty:
+        return []
+    # CSV uses 'event_name', Social Analysis uses 'title'
+    title_col = "event_name" if "event_name" in cached_df else "title" if "title" in cached_df else None
+    titles = cached_df[title_col].astype(object) if title_col else pd.Series("", index=cached_df.index, dtype=object)
+    events = pd.DataFrame({
+        "calendar": calendar_name,
+        "title": titles.where(titles.notna(), ""),
+        "start": cached_df["start"],
+        "end": cached_df["end"],
+        "duration_hours": cached_df["duration_hours"],
+        "free": cached_df["free"] if "free" in cached_df else False,
+    })
+    return events.to_dict("records")
 
 def fetch_calendar_events(url, calendar_name):
     """Fetch and parse events from a calendar URL and update CSV cache."""
@@ -207,29 +208,37 @@ def people_matching_calendar(calendar_name, known_people):
             matches.append(person_entry)
     return matches
 
-def extract_people_from_title(title, known_people, ignore_partial_names=False):
-    """Extract people mentioned in an event title.
-    
-    known_people entries can contain aliases: 'Niclas Nic' means both
-    'Niclas' and 'Nic' refer to the same person (displayed as 'Niclas').
-    """
-    title_lower = title.lower()
-    found_people = []
-    
+def compile_people_patterns(known_people):
+    """[(person entry, compiled pattern)] matching any of a person's names
+    (primary or aliases), in known_people order. People without a name are
+    left out."""
+    compiled = []
     for person_entry in known_people:
         primary_name, all_names = parse_person_entry(person_entry)
         if not primary_name:
             continue
-        
-        # Check if any of the names (primary or aliases) match
-        for name in all_names:
-            name_lower = name.lower()
-            pattern = build_name_pattern(name_lower)
-            if re.search(pattern, title_lower):
-                # Use the full entry as the key (to keep aliases grouped)
-                if person_entry not in found_people:
-                    found_people.append(person_entry)
-                break  # Found a match for this person, no need to check other aliases
+        pattern = "|".join(f"(?:{build_name_pattern(name.lower())})" for name in all_names)
+        compiled.append((person_entry, re.compile(pattern)))
+    return compiled
+
+
+def extract_people_from_title(title, known_people, ignore_partial_names=False, compiled=None):
+    """Extract people mentioned in an event title.
+    
+    known_people entries can contain aliases: 'Niclas Nic' means both
+    'Niclas' and 'Nic' refer to the same person (displayed as 'Niclas').
+    `compiled` (compile_people_patterns(known_people)) saves compiling the
+    patterns again for every title.
+    """
+    title_lower = title.lower()
+    found_people = []
+    
+    for person_entry, pattern in (compiled if compiled is not None else compile_people_patterns(known_people)):
+        # A match of any of the names (primary or aliases) counts
+        if pattern.search(title_lower):
+            # Use the full entry as the key (to keep aliases grouped)
+            if person_entry not in found_people:
+                found_people.append(person_entry)
     
     # Filter out partial names if a longer name containing them is also found
     if ignore_partial_names and len(found_people) > 1:
@@ -351,25 +360,30 @@ def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_
     """Analyze time spent with each person."""
     time_per_person = defaultdict(float)
     events_per_person = defaultdict(list)
-    
-    for _, row in df.iterrows():
-        title = row['title']
+    compiled = compile_people_patterns(known_people)
+    calendar_people = {}  # calendar name -> people_matching_calendar()
+
+    n = len(df)
+    calendars = df['calendar'] if 'calendar' in df else ['Unknown'] * n
+    full_durations = df['full_duration_hours'] if 'full_duration_hours' in df else [None] * n
+    for title, start, end, duration, calendar_name, full_duration in zip(
+            df['title'], df['start'], df['end'], df['duration_hours'], calendars, full_durations):
         if not isinstance(title, str):
             title = str(title) if pd.notna(title) else ""
-        duration = row['duration_hours']
-        calendar_name = row.get('calendar', 'Unknown')
         
         # Skip excluded events
         if should_exclude(title, exclude_patterns):
             continue
         
-        people = extract_people_from_title(title, known_people, ignore_partial_names)
+        people = extract_people_from_title(title, known_people, ignore_partial_names, compiled)
 
         if match_calendar_names:
             # Every event of a calendar named after someone counts towards
             # them. Skip anyone the title already matched, otherwise the
             # event would be added to their total twice.
-            for person in people_matching_calendar(calendar_name, known_people):
+            if calendar_name not in calendar_people:
+                calendar_people[calendar_name] = people_matching_calendar(calendar_name, known_people)
+            for person in calendar_people[calendar_name]:
                 if person not in people:
                     people.append(person)
 
@@ -377,11 +391,11 @@ def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_
             time_per_person[person] += duration
             events_per_person[person].append({
                 'title': title,
-                'date': row['start'],
-                'end': row['end'],
+                'date': start,
+                'end': end,
                 'duration': duration,
                 # Unclipped length, for display when the event extends past the range
-                'full_duration': row.get('full_duration_hours', duration),
+                'full_duration': duration if full_duration is None else full_duration,
                 'calendar': calendar_name
             })
     
@@ -844,21 +858,25 @@ if all_events:
         st.subheader("📅 Sample Events")
         
         # Filter out events that contain known people
+        known_patterns = [re.compile(build_name_pattern(p.lower().strip()))
+                          for p in known_people if p.lower().strip()]
+
         def contains_known_person(title):
             title_lower = title.lower()
-            for person in known_people:
-                person_lower = person.lower().strip()
-                if person_lower and re.search(build_name_pattern(person_lower), title_lower):
-                    return True
-            return False
+            return any(pattern.search(title_lower) for pattern in known_patterns)
         
         attributed = df_filtered['title'].apply(contains_known_person)
         if match_calendar_names:
             # Events already attributed through their calendar name are not
             # unidentified either, so keep them out of the samples.
-            attributed = attributed | df_filtered['calendar'].apply(
-                lambda c: bool(people_matching_calendar(c, known_people))
-            )
+            named_after = {}
+
+            def calendar_named_after_person(c):
+                if c not in named_after:
+                    named_after[c] = bool(people_matching_calendar(c, known_people))
+                return named_after[c]
+
+            attributed = attributed | df_filtered['calendar'].apply(calendar_named_after_person)
         sample_df = df_filtered[~attributed]
         # Show unique titles only
         sample_events = sample_df.drop_duplicates(subset=['title'])[['title', 'start', 'duration_hours']].head(20)
