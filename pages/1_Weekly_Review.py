@@ -164,7 +164,7 @@ if weekly_goals:
         # Same as Home and the Goals page: sleep and Oura activity goals add
         # an estimate of what isn't recorded yet.
         kind = goal_estimate_kind(df, goal, settings)
-        frame = goal_frame(df, goal, kind)
+        frame = goal_frame(df, goal, kind, settings)
         sub = goal_events(frame, goal, tags, tag_groups)
         booked = goal_amount(goal, sub, week, week_end, tz=tz)
         done = goal_amount(goal, sub, week, week_end, now=now, tz=tz)
@@ -175,7 +175,8 @@ if weekly_goals:
             _, label = estimated_goal_status(goal, done, booked + est["hours"])
             amount = f"~{format_goal_amount(goal, booked + est['hours'])} expected"
             estimate_notes.append(est["note"])
-        rows.append({"Goal": f"{goal['name']} ({goal['type'].replace('_', ' ')})", "Target": goal_target_text(goal),
+        measure = ", actual sleep" if kind == "sleep" and settings.get("goals_sleep_measure") == "asleep" else ""
+        rows.append({"Goal": f"{goal['name']} ({goal['type'].replace('_', ' ')}{measure})", "Target": goal_target_text(goal),
                      "Amount": amount, "Status": label})
         goal_lines.append(f"{goal['name']} {goal_target_text(goal)}: {amount} — {label}")
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)

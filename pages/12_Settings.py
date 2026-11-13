@@ -313,6 +313,15 @@ with tab_display:
                  "The bedtime plan comes from a go_to_bed calendar (🛏️ Go to bed / ⏰ Wake up events); nights "
                  "it doesn't cover use your usual sleep.",
         )
+        sleep_measure = st.radio(
+            "Sleep goals count",
+            ["in_bed", "asleep"],
+            index=1 if settings.get("goals_sleep_measure") == "asleep" else 0,
+            format_func={"in_bed": "Time in bed", "asleep": "Actual sleep"}.get,
+            horizontal=True,
+            help="Time in bed = the length of the sleep events. Actual sleep = the sleep time in their titles "
+                 "(\"Sleep: 7:17\" from oura-sleep-ical); future nights use your usual share of time in bed asleep.",
+        )
         plan_options = [""] + time_calendar_names()
         current_plan = settings.get("goals_sleep_plan_calendar") or ""
         plan_calendar = st.selectbox(
@@ -334,6 +343,7 @@ with tab_display:
             settings.update({
                 "goals_sleep_estimate": sleep_mode,
                 "goals_sleep_plan_calendar": plan_calendar,
+                "goals_sleep_measure": sleep_measure,
                 "goals_activity_estimate": activity_mode,
                 "long_events": long_events,
                 "long_event_hours": int(long_hours),

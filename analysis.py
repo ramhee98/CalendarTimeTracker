@@ -61,6 +61,9 @@ def clip_between(df, lo, hi):
     out = df[overlaps | instant].copy()
     clipped = out["end"].clip(upper=hi) - out["start"].clip(lower=lo)
     out["duration_hours"] = (clipped.dt.total_seconds() / 3600).clip(lower=0)
+    if "hours_factor" in out:
+        # Only part of the event's time counts (e.g. asleep vs time in bed).
+        out["duration_hours"] *= out["hours_factor"].fillna(1.0)
     return out
 
 
@@ -1076,6 +1079,32 @@ def expected_sleep(pairs, lo, hi, now, tz, wake_times=None, plan=None, mode="usu
                     nights.append((d, bed, wake, source))
         d += timedelta(days=1)
     return hours, nights
+
+
+_ASLEEP = re.compile(r"^\s*(?:Sleep|Nap)\s*:\s*(\d+):(\d{2})", re.IGNORECASE)
+
+
+def asleep_factors(events):
+    """Share of each sleep event's time in bed spent asleep, from titles like
+    "Sleep: 7:17\\nTib: 7:47" (oura-sleep-ical); 1.0 where the title has no
+    sleep time. Returned as a Series aligned with `events`."""
+    tib = (events["end"] - events["start"]).dt.total_seconds() / 3600
+    asleep = events["event_name"].astype(str).str.extract(_ASLEEP).astype(float)
+    hours = asleep[0] + asleep[1] / 60
+    factor = (hours / tib.where(tib > 0)).clip(upper=1.0)
+    return factor.fillna(1.0)
+
+
+def usual_efficiency(events, now, days=28):
+    """Median asleep share of the nights (not naps) of the last `days` (or the
+    latest `days` with data) of sleep `events`; 1.0 without data."""
+    nights = events[(events["start"] < now) & (events["end"] - events["start"] >= pd.Timedelta(hours=NIGHT_MIN_HOURS))]
+    if nights.empty:
+        return 1.0
+    recent = nights[nights["start"] >= now - pd.Timedelta(days=days)]
+    if recent.empty:
+        recent = nights[nights["start"] >= nights["start"].max() - pd.Timedelta(days=days)]
+    return float(asleep_factors(recent).median())
 
 
 def usual_sleep_text(pairs, now, tz):

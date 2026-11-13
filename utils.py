@@ -381,6 +381,9 @@ DEFAULT_APP_SETTINGS = {
     # calendar holds the go_to_bed plan ("" = the one with go-to-bed- UIDs).
     "goals_sleep_estimate": "usual",
     "goals_sleep_plan_calendar": "",
+    # Goals: sleep goals count time in bed ("in_bed", the sleep events'
+    # length) or actual sleep ("asleep", the "Sleep: H:MM" in their titles).
+    "goals_sleep_measure": "in_bed",
     # Goals: Oura activity goals add the average per weekday ("average") or nothing ("off").
     "goals_activity_estimate": "average",
     # "include" counts all-day / multi-day events fully, "exclude" drops them.
@@ -700,14 +703,24 @@ def goal_estimate_kind(df, goal, settings=None):
     return None
 
 
-def goal_frame(df, goal, kind):
+def goal_frame(df, goal, kind, settings=None):
     """`df` as a goal of `kind` counts it: sleep and activity goals count
     only timed events, not the all-day daily and monthly summaries of
-    oura-sleep-ical ("💤 Sleep Summary") and oura-activity-ical."""
+    oura-sleep-ical ("💤 Sleep Summary") and oura-activity-ical. With
+    "goals_sleep_measure" = "asleep", sleep events count the sleep time of
+    their title ("Sleep: 7:17") instead of their time in bed."""
     if kind not in ("sleep", "activity"):
         return df
-    from analysis import is_all_day
-    return df[~((df["calendar"] == goal["name"]) & is_all_day(df["start"], df["end"]))]
+    from analysis import asleep_factors, is_all_day
+    mine = df["calendar"] == goal["name"]
+    frame = df[~(mine & is_all_day(df["start"], df["end"]))]
+    settings = load_app_settings() if settings is None else settings
+    if kind == "sleep" and settings.get("goals_sleep_measure") == "asleep":
+        frame = frame.copy()
+        mine = frame["calendar"] == goal["name"]
+        frame["hours_factor"] = 1.0
+        frame.loc[mine, "hours_factor"] = asleep_factors(frame[mine])
+    return frame
 
 
 def sleep_plan_for(settings):
@@ -745,6 +758,12 @@ def goal_estimate(df, goal, kind, first, end, now, settings=None):
         plan = sleep_plan_for(settings) if mode in ("plan", "plan_wake") else {}
         hours, nights = expected_sleep(pairs, local_midnight(first, tz), local_midnight(end, tz), now, tz,
                                        plan=plan, mode=mode)
+        asleep_note = ""
+        if settings.get("goals_sleep_measure") == "asleep":
+            from analysis import usual_efficiency
+            efficiency = usual_efficiency(sub, now)
+            hours *= efficiency
+            asleep_note = f", counting {efficiency:.0%} of the time in bed as asleep (your usual efficiency)"
         note = ""
         if nights:
             planned = sum(1 for n in nights if n[3] == "plan")
@@ -761,7 +780,8 @@ def goal_estimate(df, goal, kind, first, end, now, settings=None):
                 how = f"no bedtime plan found, so from your usual sleep, {usual}"
             else:
                 how = f"from your usual sleep, {usual}"
-            note = f"😴 **{goal['name']}**: {len(nights)} night(s) not recorded yet are estimated (+{hours:.1f}h): {how}."
+            note = (f"😴 **{goal['name']}**: {len(nights)} night(s) not recorded yet are estimated (+{hours:.1f}h): "
+                    f"{how}{asleep_note}.")
         return {"hours": hours, "note": note}
     if kind == "activity":
         if settings.get("goals_activity_estimate", "average") == "off":
@@ -790,8 +810,10 @@ def evaluate_goals(df, goals, now, history=12, tags=None, groups=()):
     results = []
     for goal in goals:
         kind = goal_estimate_kind(df, goal, settings)
-        frame = goal_frame(df, goal, kind)
+        frame = goal_frame(df, goal, kind, settings)
         r = evaluate_goal(frame, goal, now, history, tags, groups)
+        if kind == "sleep" and settings.get("goals_sleep_measure") == "asleep":
+            r["measure"] = "actual sleep"
         if kind:
             est = goal_estimate(frame, goal, kind, r["period_start"], r["period_end"] + timedelta(days=1), now,
                                 settings)
@@ -821,10 +843,11 @@ def render_goal_progress(goal, result):
     else:
         amounts = (f"{format_goal_amount(goal, result['done'])} done, "
                    f"{format_goal_amount(goal, result['booked'])} booked of")
+    measure = f", {result['measure']}" if result.get("measure") else ""
     st.progress(
         fraction,
         text=(
-            f"{icon} **{goal['name']}** ({type_name.lower()}) · {amounts} "
+            f"{icon} **{goal['name']}** ({type_name.lower()}{measure}) · {amounts} "
             f"{goal_target_text(goal)} {this_period_text(result['period'])}"
             f" — {result['status_label']}"
         ),

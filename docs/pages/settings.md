@@ -18,7 +18,7 @@ Manage the app from the browser: forms for the common settings, plus a raw text 
 - How all-day and multi-day events count, and from how many hours an event counts as long.
 - Whether events marked as free are ignored.
 - The default "View data by" choice and the default date range when a page opens.
-- **🎯 Goal estimates**: how sleep goals estimate the nights not recorded yet: your usual sleep (median bedtime and wake-up time of the last 4 weeks), your [go_to_bed](https://github.com/ramhee98/go_to_bed) bedtime plan where it has one (else usual sleep), your usual bedtime with the planned wake-up time, or no estimate. The plan calendar is found automatically by its event IDs, or chosen here. Oura activity goals can add your average per weekday or nothing. See [Goals](goals.md).
+- **🎯 Goal estimates**: how sleep goals estimate the nights not recorded yet: your usual sleep (median bedtime and wake-up time of the last 4 weeks), your [go_to_bed](https://github.com/ramhee98/go_to_bed) bedtime plan where it has one (else usual sleep), your usual bedtime with the planned wake-up time, or no estimate. The plan calendar is found automatically by its event IDs, or chosen here. Sleep goals can count **time in bed** (the length of the sleep events, default) or **actual sleep** (the "Sleep: 7:17" in the titles of [oura-sleep-ical](https://github.com/ramhee98/oura-sleep-ical) events; estimated nights then use your usual share of time in bed asleep). Oura activity goals can add your average per weekday or nothing. See [Goals](goals.md).
 
 ## 🏷️ Tags
 
