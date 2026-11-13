@@ -4,7 +4,7 @@ import altair as alt
 from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
     load_goals, save_goals, render_goal_progress, goal_type_label, GOAL_TYPE_LABELS,
-    load_tag_occurrences, load_tag_groups, load_app_settings, slot_blocker, evaluate_goals, is_sleep_goal,
+    load_tag_occurrences, load_tag_groups, load_app_settings, slot_blocker, evaluate_goals, goal_estimate_kind,
 )
 from analysis import (
     PERIODS, format_goal_amount, goal_target_text, is_tag_goal, period_label, slots_to_ics, suggest_goal_slots,
@@ -123,8 +123,8 @@ st.subheader("This Period")
 for goal, r in results:
     render_goal_progress(goal, r)
 for goal, r in results:
-    if r.get("sleep_note"):
-        st.caption("😴 " + r["sleep_note"])
+    if r.get("estimate_note"):
+        st.caption(r["estimate_note"])
 
 overview = pd.DataFrame([{
     "Goal": target_label(g["type"], g["name"]),
@@ -138,15 +138,18 @@ overview = pd.DataFrame([{
 } for g, r in results])
 st.dataframe(overview, use_container_width=True, hide_index=True)
 st.caption("Done = hours (or tags) already passed this period, Booked = done plus events still scheduled; "
-           "for sleep goals, plus the estimated nights not recorded yet (median of the last 4 weeks). "
+           "for sleep and Oura activity goals, plus an estimate from the last 4 weeks of what isn't recorded yet. "
            "Streak and hit rate count complete periods only. Tags are read from the local cache; "
            "🔄 Sync Calendars updates them too unless Sync is limited to the page's calendars.")
 
 # --- Free-slot suggestions ---
 st.subheader("💡 Suggested slots")
-time_min_goals = [g for g in goals if not is_tag_goal(g) and g["min"] is not None and not is_sleep_goal(g, app_settings)]
+# Sleep and Oura activity are recorded after the fact, not planned in free slots.
+time_min_goals = [g for g, r in results if not is_tag_goal(g) and g["min"] is not None and "expected" not in r
+                  and goal_estimate_kind(df, g, app_settings) is None]
 if not time_min_goals:
-    st.caption("Suggestions are made for calendar and category goals with a Min (not for sleep).")
+    st.caption("Suggestions are made for calendar and category goals with a Min "
+               "(not for sleep or Oura activity, which are recorded after the fact).")
 else:
     plan = st.radio("Plan for", ["current", "next"], horizontal=True, key="slots_plan",
                     format_func={"current": "The rest of this day / week / month",

@@ -1039,6 +1039,67 @@ def usual_sleep_text(pairs, now, tz):
     return f"{week} on weeknights (Sun–Thu) · {weekend} on Fri/Sat nights"
 
 
+OURA_ACTIVITY_UID_PREFIXES = ("oura-workout-", "oura-session-", "oura-daily-activity-", "oura-activity-summary-")
+
+
+def is_oura_activity(events):
+    """Whether `events` (of one calendar) come from oura-activity-ical,
+    recognised by its UIDs (oura-workout-…, oura-daily-activity-…)."""
+    if events.empty or "uid" not in events:
+        return False
+    return bool(events["uid"].astype(str).str.startswith(OURA_ACTIVITY_UID_PREFIXES).any())
+
+
+def usual_daily_hours(sub, now, days=28, min_days=3):
+    """Average hours per weekday of `sub` (timed events) over the last `days`
+    complete days before today, or the latest `days` up to the last day with
+    data if there's none recently. Days without events count as 0; a weekday
+    with fewer than `min_days` days uses the average of all days.
+    Returns {weekday: hours} or {} without data."""
+    today = now.date()
+    past = sub[sub["start"] < local_midnight(today, now.tz)]
+    if past.empty:
+        return {}
+    dates = past["start"].dt.date
+    last = today - timedelta(days=1)
+    if (dates >= today - timedelta(days=days)).sum() == 0:
+        last = dates.max()
+    first = max(last - timedelta(days=days - 1), dates.min())
+    per_day = past[(dates >= first) & (dates <= last)].groupby(dates)["duration_hours"].sum()
+    all_days = pd.Series(0.0, index=pd.Index([first + timedelta(days=i) for i in range((last - first).days + 1)]))
+    all_days = all_days.add(per_day, fill_value=0)
+    weekday = pd.Series([d.weekday() for d in all_days.index], index=all_days.index)
+    overall = float(all_days.mean())
+    usual = {}
+    for wd in range(7):
+        vals = all_days[weekday == wd]
+        usual[wd] = float(vals.mean()) if len(vals) >= min_days else overall
+    return usual
+
+
+def expected_daily(sub, first, end, now, days=28):
+    """Estimated hours of `sub` (timed events, recorded after the fact) for
+    the days from today up to date `end` (exclusive), within the period
+    starting at date `first`: each future day gets its usual hours
+    (`usual_daily_hours`), today its usual hours minus what's recorded today.
+    Returns (hours, usual) with usual = {weekday: hours} ({} without data)."""
+    usual = usual_daily_hours(sub, now, days)
+    if not usual:
+        return 0.0, {}
+    today = now.date()
+    tz = now.tz
+    hours = 0.0
+    d = max(first, today)
+    while d < end:
+        expected = usual[d.weekday()]
+        if d == today:
+            done_today = clip_between(sub, local_midnight(today, tz), now)["duration_hours"].sum()
+            expected = max(0.0, expected - float(done_today))
+        hours += expected
+        d += timedelta(days=1)
+    return hours, usual
+
+
 # --- Goal preferences and slot picking ---
 
 def goal_time_preferences(df, goal, now, weeks=26):

@@ -689,7 +689,7 @@ if all_events:
                 render_goal_progress(goal, r)
         caption = "Edit goals and see their history on the Goals page."
         if any("expected" in r for _, r in results):
-            caption += " 😴 Sleep goals include your usual sleep for nights not recorded yet."
+            caption += " Sleep and Oura activity goals include an estimate of what isn't recorded yet."
         st.caption(caption)
     show_upcoming_weeks(full_df, group_mode, now.date())
 
