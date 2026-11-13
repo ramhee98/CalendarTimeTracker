@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import requests
 from datetime import datetime, date, timedelta, timezone
 import altair as alt
@@ -246,9 +247,9 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
     # Vectorized time proportion calculation
     def calculate_time_proportions_vectorized(df, periods_df, period_start_col, period_end_col, label_col):
         """Calculate time proportions using vectorized operations instead of nested loops."""
-        results = []
         tz = df['start'].dt.tz
-        
+        starts, ends, labels = [], [], []
+
         for _, period in periods_df.iterrows():
             period_start = pd.Timestamp(period[period_start_col])
             period_end = pd.Timestamp(period[period_end_col])
@@ -272,26 +273,45 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
             
             # Set end of period to end of day
             period_end = period_end.replace(hour=23, minute=59, second=59)
-            
-            # Vectorized overlap calculation
-            event_starts = df['start'].clip(lower=period_start)
-            event_ends = df['end'].clip(upper=period_end)
-            
-            # Calculate durations (only positive overlaps)
-            durations = (event_ends - event_starts).dt.total_seconds() / 3600
-            durations = durations.clip(lower=0)
-            
-            # Filter events with positive duration and aggregate
-            mask = durations > 0
-            if mask.any():
-                period_df = df.loc[mask, ['group']].copy()
-                period_df['duration_hours'] = durations[mask]
-                period_df['time_label'] = period[label_col]
-                results.append(period_df)
-        
-        if results:
-            return pd.concat(results, ignore_index=True)
-        return pd.DataFrame()
+            starts.append(period_start.as_unit('ns').value)
+            ends.append(period_end.as_unit('ns').value)
+            labels.append(period[label_col])
+
+        # Hours of every event in every period it overlaps. Periods are in
+        # order and don't overlap, so each event only needs to be compared
+        # with the periods from the first one ending after it starts up to
+        # the last one starting before it ends (not with all periods).
+        valid = (df['start'].notna() & df['end'].notna()).to_numpy()
+        if not starts or not valid.any():
+            return pd.DataFrame()
+        period_starts, period_ends = np.array(starts, dtype='int64'), np.array(ends, dtype='int64')
+        event_rows = np.flatnonzero(valid)
+        event_starts = df['start'].dt.as_unit('ns').array.asi8[event_rows]
+        event_ends = df['end'].dt.as_unit('ns').array.asi8[event_rows]
+        first = np.searchsorted(period_ends, event_starts, side='right')
+        stop = np.searchsorted(period_starts, event_ends, side='left')
+        counts = np.clip(stop - first, 0, None)
+        if counts.sum() == 0:
+            return pd.DataFrame()
+        pair_event = np.repeat(np.arange(len(event_rows)), counts)
+        # Period index of each pair: first[e], first[e] + 1, ... per event
+        offsets = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
+        pair_period = np.repeat(first, counts) + offsets
+        # Same order as one pass per period over all events: period, then event
+        order = np.lexsort((pair_event, pair_period))
+        pair_event, pair_period = pair_event[order], pair_period[order]
+
+        overlap_ns = (np.minimum(event_ends[pair_event], period_ends[pair_period])
+                      - np.maximum(event_starts[pair_event], period_starts[pair_period]))
+        durations = pd.Series(pd.to_timedelta(overlap_ns, unit='ns')).dt.total_seconds() / 3600
+        mask = (durations > 0).to_numpy()
+        if not mask.any():
+            return pd.DataFrame()
+        return pd.DataFrame({
+            'group': df['group'].take(event_rows[pair_event[mask]]).reset_index(drop=True),
+            'duration_hours': durations[mask].reset_index(drop=True),
+            'time_label': np.array(labels, dtype=object)[pair_period[mask]],
+        })
 
     # Create time-based data frames based on the selected date_option
     time_aggregation = pd.DataFrame()
