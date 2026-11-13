@@ -303,21 +303,33 @@ def format_gap(hours_val):
     days_val = hours_val / 24
     return f"{round(hours_val)}h ({round(days_val, 1)} days)"
 
-def format_days_ago(days):
-    """Human-readable 'x days ago' for a non-negative day count."""
+def format_hours_span(hours):
+    """'45 min' under an hour, otherwise rounded hours like '3h'."""
+    if hours < 1:
+        return f"{max(1, round(hours * 60))} min"
+    return f"{round(hours)}h"
+
+def format_days_ago(days, hours=None):
+    """Human-readable 'x days ago' for a non-negative day count; for today,
+    'xh ago' (or 'now' while the event is still running) when hours are given."""
     if days is None:
         return None
     if days == 0:
+        if hours is not None:
+            return "now" if hours <= 0 else f"{format_hours_span(hours)} ago"
         return "today"
     if days == 1:
         return "yesterday"
     return f"{days} days ago"
 
-def format_days_until(days):
-    """Human-readable 'in x days' for a non-negative day count."""
+def format_days_until(days, hours=None):
+    """Human-readable 'in x days' for a non-negative day count; for today,
+    'in xh' when hours are given."""
     if days is None:
         return None
     if days == 0:
+        if hours is not None:
+            return f"in {format_hours_span(hours)}"
         return "today"
     if days == 1:
         return "tomorrow"
@@ -669,12 +681,25 @@ if all_events:
                                  for evt in person_events if evt['date'] <= now]
                     last_seen_dt = max(past_days) if past_days else None
                     days_ago = (today.date() - last_seen_dt).days if last_seen_dt is not None else None
+                    # Seen today at a set time: hours since that event ended
+                    # (0 while it's still running). All-day events stay "today".
+                    hours_ago = None
+                    if days_ago == 0:
+                        ends = [min(evt['end'], now) for evt in person_events
+                                if evt['date'] <= now and not is_all_day_event(evt['date'], evt['end'])]
+                        last_end = max(ends) if ends else None
+                        if last_end is not None and last_end.date() == today.date():
+                            hours_ago = (now - last_end).total_seconds() / 3600
                     # Next = earliest upcoming event
-                    upcoming = [evt['date'] for evt in upcoming_per_person.get(person, [])]
-                    next_dt = min(upcoming) if upcoming else None
+                    upcoming = upcoming_per_person.get(person, [])
+                    next_evt = min(upcoming, key=lambda e: e['date']) if upcoming else None
+                    next_dt = next_evt['date'] if next_evt is not None else None
                     days_until = (next_dt.normalize() - today).days if next_dt is not None else None
-                    last_seen_by_person[person] = (last_seen_dt, days_ago)
-                    next_by_person[person] = (next_dt, days_until)
+                    hours_until = None
+                    if days_until == 0 and not is_all_day_event(next_evt['date'], next_evt['end']):
+                        hours_until = (next_dt - now).total_seconds() / 3600
+                    last_seen_by_person[person] = (last_seen_dt, days_ago, hours_ago)
+                    next_by_person[person] = (next_dt, days_until, hours_until)
                     # Calculate median duration
                     durations = [evt['duration'] for evt in person_events]
                     median_duration = sorted(durations)[len(durations) // 2] if durations else 0
@@ -696,8 +721,8 @@ if all_events:
                     display_name = get_display_name(person, include_aliases=True)
                     results.append({
                         "Person": display_name.title(),
-                        "Last Seen": days_ago,
-                        "Next": days_until,
+                        "Last Seen": format_days_ago(days_ago, hours_ago),
+                        "Next": format_days_until(days_until, hours_until),
                         "Hours": round(hours, 1),
                         "Events": event_count,
                         "Avg Hours/Event": round(hours / event_count, 1) if event_count > 0 else 0,
@@ -716,19 +741,20 @@ if all_events:
                 st.bar_chart(results_df.set_index("Person")["Hours"])
                 
                 # Table
-                # Keep Last Seen / Next numeric so they sort correctly; format for display
                 st.dataframe(
                     results_df,
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        "Last Seen": st.column_config.NumberColumn(
-                            "Last Seen", format="%d days ago",
-                            help="Days since the most recent past event in the selected range",
+                        "Last Seen": st.column_config.TextColumn(
+                            "Last Seen",
+                            help="Time since the most recent past event in the selected range "
+                                 "(in hours when it was today)",
                         ),
-                        "Next": st.column_config.NumberColumn(
-                            "Next", format="in %d days",
-                            help="Days until the next scheduled event (any future date)",
+                        "Next": st.column_config.TextColumn(
+                            "Next",
+                            help="Time until the next scheduled event, any future date "
+                                 "(in hours when it's today)",
                         ),
                     },
                 )
@@ -743,13 +769,13 @@ if all_events:
                     for evt in person_events:
                         calendar_counts[evt['calendar']] += 1
                     calendar_breakdown = ", ".join([f"{cal}: {count}" for cal, count in sorted(calendar_counts.items())])
-                    last_seen_dt, days_ago = last_seen_by_person[person]
-                    next_dt, days_until = next_by_person[person]
+                    last_seen_dt, days_ago, hours_ago = last_seen_by_person[person]
+                    next_dt, days_until, hours_until = next_by_person[person]
                     when_parts = []
                     if last_seen_dt is not None:
-                        when_parts.append(f"last seen {format_days_ago(days_ago)} ({last_seen_dt.strftime('%Y-%m-%d')})")
+                        when_parts.append(f"last seen {format_days_ago(days_ago, hours_ago)} ({last_seen_dt.strftime('%Y-%m-%d')})")
                     if next_dt is not None:
-                        when_parts.append(f"next {format_days_until(days_until)} ({next_dt.strftime('%Y-%m-%d')})")
+                        when_parts.append(f"next {format_days_until(days_until, hours_until)} ({next_dt.strftime('%Y-%m-%d')})")
                     when_str = f" · {' · '.join(when_parts)}" if when_parts else ""
                     with st.expander(f"{display_name.title()} - {len(person_events)} events ({calendar_breakdown}){when_str}"):
                         for evt in sorted(person_events, key=lambda x: x['date'], reverse=True):

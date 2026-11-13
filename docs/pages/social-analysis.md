@@ -15,7 +15,7 @@ Who you spend the most time with, based on event titles.
 ## What you see
 
 - **Time spent with people**: hours per person.
-- **Statistics per person**: hours, events, average and median hours per event, when you last met and when you meet next.
+- **Statistics per person**: hours, events, average and median hours per event, when you last met and when you meet next (in hours when that is today, e.g. "3h ago" or "in 2h").
 - **Meeting cadence**: the time between consecutive events with each person as a five-number summary (average, min, Q1, median, Q3, max), in hours with days in parentheses.
 - **Event details** per person, and **sample events** that no tracked person matched, to spot names you're still missing.
 
