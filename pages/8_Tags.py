@@ -6,7 +6,7 @@ import streamlit as st
 
 from analysis import (
     apply_tag_groups, default_chart_labels, drop_tags, merge_tag_variants, period_label, resolve_tag_groups, suggest_tag_groups, suggest_tag_groups_by_name,
-    tag_counts_by_period,
+    tag_counts_by_period, TAG_AVERAGES,
     tag_group_members, tag_occurrences, tag_summary, weighted_members, member_text,
 )
 from utils import (
@@ -239,6 +239,8 @@ if settings["tags_keep_selection"]:
 # --- Summary table ---
 st.subheader("Summary")
 shown = summary.copy()
+averages = settings.get("tags_summary_averages", list(TAG_AVERAGES))
+shown = shown.drop(columns=[col for key, col in TAG_AVERAGES.items() if key not in averages])
 shown["Last seen"] = [f"{d:%Y-%m-%d}" if d is not None and pd.notna(d) else "—" for d in shown["Last seen"]]
 st.dataframe(
     shown,

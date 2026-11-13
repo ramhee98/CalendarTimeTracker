@@ -8,7 +8,7 @@ Counts of markers from [tag calendars](../configuration.md#tag-calendars), such 
 
 ## What you see
 
-- **Summary per tag**: total, average per week, days with the tag and share of days, last seen, days since last (the current streak without it, e.g. 12 alcohol-free days) and the longest gap in the range, with CSV export.
+- **Summary per tag**: total, averages per day, week and month (choose which in Settings → 🏷️ Tags), days with the tag and share of days, last seen, days since last (the current streak without it, e.g. 12 alcohol-free days) and the longest gap in the range, with CSV export.
 - **Count per day, week or month** for the selected tags.
 - **Weekday pattern**: which days a tag is logged on.
 - **Time of day**: when timed tags happen (e.g. coffee after 14:00). All-day tags have no time and are left out.
@@ -31,6 +31,7 @@ In [Settings → 🏷️ Tags](settings.md):
 
 - which tags or groups the charts start with: the N most frequent (8 by default) or a fixed list
 - whether your chart selection is kept when you switch view or date range
+- which averages the summary shows: per day, per week and/or per month (all three by default; a month counts as 30.4 days)
 - the initial view and "Count per", and a separate date range
 - preselected tag calendars and hidden tags
 - merging tags that differ only in the emoji variant (☕ / ☕️) or spacing

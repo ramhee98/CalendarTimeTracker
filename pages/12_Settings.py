@@ -425,6 +425,15 @@ def render_tags_tab():
                  "Kept until the browser tab is reloaded.",
         )
 
+        st.markdown("**Summary table**")
+        average_labels = {"day": "per day", "week": "per week", "month": "per month"}
+        averages = st.multiselect(
+            "Averages", list(average_labels),
+            default=[a for a in settings.get("tags_summary_averages", list(average_labels)) if a in average_labels],
+            format_func=average_labels.get,
+            help="Total divided by the days, weeks or months (of 30.4 days) in the date range.",
+        )
+
         st.markdown("**Defaults when the page opens**")
         view_labels = {"grouped": "Groups + ungrouped tags", "groups": "Groups only", "tags": "Single tags"}
         views = list(view_labels)
@@ -481,6 +490,7 @@ def render_tags_tab():
                     "tags_default_calendars": default_calendars,
                     "tags_hidden": hidden,
                     "tags_merge_variants": merge,
+                    "tags_summary_averages": [a for a in average_labels if a in averages],
                 })
                 save_app_settings(settings)
                 # Let the Tags page start from the new preselection

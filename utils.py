@@ -435,6 +435,8 @@ DEFAULT_APP_SETTINGS = {
     "tags_default_calendars": [],
     # Merge "☕ Coffee" and "☕️ Coffee" (emoji variation selector, spacing).
     "tags_merge_variants": True,
+    # Tags page: averages in the summary table ("day", "week", "month").
+    "tags_summary_averages": ["day", "week", "month"],
     # 🔄 Sync Calendars on a page: "all" calendars, or only those the page
     # shows ("page": time calendars on time pages, tag calendars on Tags).
     # Home always syncs all.

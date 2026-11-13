@@ -482,13 +482,17 @@ def _longest_gap(dates, start_date, end_date):
     return max((b - a).days - 1 for a, b in zip(points, points[1:]))
 
 
+DAYS_PER_MONTH = 365.25 / 12  # average month length for "per month" averages
+TAG_AVERAGES = {"day": "Avg / day", "week": "Avg / week", "month": "Avg / month"}
+
+
 def tag_summary(occ, start_date, end_date, today):
     """Per-tag statistics for the inclusive date range.
 
     `Days since last` is counted up to `today` over all data, so it reads as
     the current streak without the tag (e.g. 12 alcohol-free days).
     """
-    columns = ["Tag", "Total", "Avg / week", "Days with tag", "% of days",
+    columns = ["Tag", "Total", "Avg / day", "Avg / week", "Avg / month", "Days with tag", "% of days",
                "Last seen", "Days since last", "Longest gap (days)"]
     in_range = occ[(occ["date"] >= start_date) & (occ["date"] <= end_date)]
     if in_range.empty:
@@ -508,7 +512,9 @@ def tag_summary(occ, start_date, end_date, today):
         rows.append({
             "Tag": tag,
             "Total": int(total) if total == int(total) else round(total, 2),
+            "Avg / day": round(total / days, 2),
             "Avg / week": round(total / (days / 7), 2),
+            "Avg / month": round(total / (days / DAYS_PER_MONTH), 2),
             "Days with tag": len(day_dates),
             "% of days": round(len(day_dates) / days * 100, 1),
             "Last seen": last,
