@@ -14,10 +14,10 @@ from utils import (
     default_view_index,
     load_calendar_urls, load_all_events, load_all_events_from_cache, parse_ics_from_url,
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
-    build_events_df, load_goals, render_goal_progress, render_health_banner, load_tag_occurrences, load_tag_groups,
+    build_events_df, load_goals, render_goal_progress, evaluate_goals, render_health_banner, load_tag_occurrences, load_tag_groups,
 )
 from analysis import (
-    clip_to_range, long_event_mask, find_overlaps, union_hours, evaluate_goal, is_tag_goal,
+    clip_to_range, long_event_mask, find_overlaps, union_hours, is_tag_goal,
     booked_weeks, period_label,
 )
 
@@ -683,11 +683,14 @@ if all_events:
         tags = load_tag_occurrences() if has_tag_goals else None
         tag_groups = load_tag_groups() if has_tag_goals else []
         goal_cols = st.columns(2)
-        for i, goal in enumerate(goals):
+        results = evaluate_goals(full_df, goals, now, history=0, tags=tags, groups=tag_groups)
+        for i, (goal, r) in enumerate(results):
             with goal_cols[i % 2]:
-                render_goal_progress(goal, evaluate_goal(full_df, goal, now, history=0,
-                                                         tags=tags, groups=tag_groups))
-        st.caption("Edit goals and see their history on the Goals page.")
+                render_goal_progress(goal, r)
+        caption = "Edit goals and see their history on the Goals page."
+        if any("expected" in r for _, r in results):
+            caption += " 😴 Sleep goals include your usual sleep for nights not recorded yet."
+        st.caption(caption)
     show_upcoming_weeks(full_df, group_mode, now.date())
 
     # Process data with progress indicator

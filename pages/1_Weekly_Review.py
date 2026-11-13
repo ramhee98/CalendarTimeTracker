@@ -5,11 +5,12 @@ from datetime import date, timedelta
 from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
     select_group_mode, load_goals, load_tag_occurrences, load_tag_groups,
+    load_app_settings, is_sleep_goal, sleep_goal_estimate,
 )
 from analysis import (
     clip_between, local_midnight, period_start, period_label, typical_week,
     hours_by_period, goal_events, goal_status, goal_target_text, long_event_mask,
-    goal_amount, format_goal_amount, is_tag_goal,
+    goal_amount, format_goal_amount, is_tag_goal, estimated_goal_status,
 )
 
 st.set_page_config(page_title="Weekly Review", layout="wide")
@@ -157,16 +158,26 @@ if weekly_goals:
     tag_groups = load_tag_groups() if has_tag_goals else []
     rows = []
     week_end = week + timedelta(days=7)
+    settings = load_app_settings()
+    sleep_notes = []
     for goal in weekly_goals:
         sub = goal_events(df, goal, tags, tag_groups)
         booked = goal_amount(goal, sub, week, week_end, tz=tz)
         done = goal_amount(goal, sub, week, week_end, now=now, tz=tz)
         _, label = goal_status(goal, done, booked)
         amount = format_goal_amount(goal, booked)
+        # Same as Home and the Goals page: sleep goals add the nights not recorded yet.
+        est = sleep_goal_estimate(df, goal, week, week_end, now) if is_sleep_goal(goal, settings) else None
+        if est is not None and est["hours"] > 0:
+            _, label = estimated_goal_status(goal, done, booked + est["hours"])
+            amount = f"~{format_goal_amount(goal, booked + est['hours'])} expected"
+            sleep_notes.append(est["note"])
         rows.append({"Goal": f"{goal['name']} ({goal['type'].replace('_', ' ')})", "Target": goal_target_text(goal),
                      "Amount": amount, "Status": label})
         goal_lines.append(f"{goal['name']} {goal_target_text(goal)}: {amount} — {label}")
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    for note in sleep_notes:
+        st.caption("😴 " + note)
     st.caption("Daily and monthly goals and goal history are on the Goals page.")
 
 # --- Day by day ---

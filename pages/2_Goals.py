@@ -4,12 +4,10 @@ import altair as alt
 from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
     load_goals, save_goals, render_goal_progress, goal_type_label, GOAL_TYPE_LABELS,
-    load_tag_occurrences, load_tag_groups, load_app_settings, slot_blocker,
+    load_tag_occurrences, load_tag_groups, load_app_settings, slot_blocker, evaluate_goals, is_sleep_goal,
 )
 from analysis import (
-    PERIODS, estimated_goal_status, evaluate_goal, expected_sleep, format_goal_amount, goal_events,
-    goal_target_text, is_tag_goal, local_midnight, period_label, sleep_from_calendar, slots_to_ics,
-    suggest_goal_slots, usual_sleep_text,
+    PERIODS, format_goal_amount, goal_target_text, is_tag_goal, period_label, slots_to_ics, suggest_goal_slots,
 )
 
 st.set_page_config(page_title="Goals", layout="wide")
@@ -118,44 +116,15 @@ now = pd.Timestamp.now(tz=df["start"].dt.tz)
 history = st.slider("History to evaluate (complete days/weeks/months)", 4, 90, 12)
 
 with st.spinner("Evaluating goals..."):
-    results = [(g, evaluate_goal(df, g, now, history, tags, tag_groups)) for g in goals]
-
+    results = evaluate_goals(df, goals, now, history, tags, tag_groups)
 app_settings = load_app_settings()
-sleep_calendar = app_settings.get("slots_sleep_calendar") if app_settings.get("slots_sleep_mode") == "calendar" else None
-
-
-def is_sleep_goal(goal):
-    """Calendar goals for the sleep calendar (Settings → 💡 Free slots) or a calendar named like one."""
-    if goal["type"] != "calendar":
-        return False
-    return goal["name"] == sleep_calendar or any(w in goal["name"].casefold() for w in ("sleep", "schlaf"))
-
-
-# Sleep isn't booked ahead, so sleep goals add the usual sleep of the
-# nights that aren't recorded yet to what's done and booked.
-sleep_notes = []
-tz = now.tz
-for goal, r in results:
-    if not is_sleep_goal(goal):
-        continue
-    pairs = sleep_from_calendar(goal_events(df, goal))
-    lo = local_midnight(r["period_start"], tz)
-    hi = local_midnight(r["period_end"] + pd.Timedelta(days=1), tz)
-    extra, nights = expected_sleep(pairs, lo, hi, now, tz)
-    if not pairs:
-        continue
-    r["expected"] = r["booked"] + extra
-    r["status"], r["status_label"] = estimated_goal_status(goal, r["done"], r["expected"])
-    usual = usual_sleep_text(pairs, now, tz)
-    if nights:
-        sleep_notes.append(f"**{goal['name']}**: {len(nights)} night(s) not recorded yet are estimated "
-                           f"(+{extra:.1f}h) from your usual sleep, {usual}.")
 
 st.subheader("This Period")
 for goal, r in results:
     render_goal_progress(goal, r)
-for note in sleep_notes:
-    st.caption("😴 " + note)
+for goal, r in results:
+    if r.get("sleep_note"):
+        st.caption("😴 " + r["sleep_note"])
 
 overview = pd.DataFrame([{
     "Goal": target_label(g["type"], g["name"]),
@@ -175,7 +144,7 @@ st.caption("Done = hours (or tags) already passed this period, Booked = done plu
 
 # --- Free-slot suggestions ---
 st.subheader("💡 Suggested slots")
-time_min_goals = [g for g in goals if not is_tag_goal(g) and g["min"] is not None and not is_sleep_goal(g)]
+time_min_goals = [g for g in goals if not is_tag_goal(g) and g["min"] is not None and not is_sleep_goal(g, app_settings)]
 if not time_min_goals:
     st.caption("Suggestions are made for calendar and category goals with a Min (not for sleep).")
 else:

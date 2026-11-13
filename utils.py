@@ -669,6 +669,57 @@ def this_period_text(period):
     return "today" if period == "day" else f"this {period}"
 
 
+def is_sleep_goal(goal, settings=None):
+    """Calendar goals for the sleep calendar (Settings → 💡 Free slots) or a
+    calendar named like one ("sleep", "schlaf")."""
+    if goal.get("type") != "calendar":
+        return False
+    settings = load_app_settings() if settings is None else settings
+    sleep_calendar = settings.get("slots_sleep_calendar") if settings.get("slots_sleep_mode") == "calendar" else None
+    return goal["name"] == sleep_calendar or any(w in goal["name"].casefold() for w in ("sleep", "schlaf"))
+
+
+def sleep_goal_estimate(df, goal, first, end, now):
+    """Usual sleep of the nights not recorded yet for a sleep goal, from
+    date `first` up to date `end` (exclusive).
+
+    Sleep isn't booked ahead, so this is added to done + booked. Returns
+    {"hours", "nights", "note"} or None without sleep data to estimate from.
+    """
+    from analysis import expected_sleep, goal_events, local_midnight, sleep_from_calendar, usual_sleep_text
+
+    pairs = sleep_from_calendar(goal_events(df, goal))
+    if not pairs:
+        return None
+    tz = now.tz
+    hours, nights = expected_sleep(pairs, local_midnight(first, tz), local_midnight(end, tz), now, tz)
+    note = ""
+    if nights:
+        note = (f"**{goal['name']}**: {len(nights)} night(s) not recorded yet are estimated (+{hours:.1f}h) "
+                f"from your usual sleep, {usual_sleep_text(pairs, now, tz)}.")
+    return {"hours": hours, "nights": nights, "note": note}
+
+
+def evaluate_goals(df, goals, now, history=12, tags=None, groups=()):
+    """[(goal, result)] for the current period of every goal, as on the Goals
+    page and Home: `evaluate_goal` plus, for sleep goals, the estimated
+    nights not recorded yet (result["expected"], result["sleep_note"])."""
+    from analysis import estimated_goal_status, evaluate_goal
+
+    settings = load_app_settings()
+    results = []
+    for goal in goals:
+        r = evaluate_goal(df, goal, now, history, tags, groups)
+        if is_sleep_goal(goal, settings):
+            est = sleep_goal_estimate(df, goal, r["period_start"], r["period_end"] + timedelta(days=1), now)
+            if est is not None:
+                r["expected"] = r["booked"] + est["hours"]
+                r["status"], r["status_label"] = estimated_goal_status(goal, r["done"], r["expected"])
+                r["sleep_note"] = est["note"]
+        results.append((goal, r))
+    return results
+
+
 def render_goal_progress(goal, result):
     """One progress bar for a goal's current period (Home and Goals page)."""
     from analysis import format_goal_amount, goal_target_text, is_tag_goal
