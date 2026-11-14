@@ -305,6 +305,9 @@ def show_duration_charts(df, start_date, end_date, group_mode, date_option):
         overlap_ns = (np.minimum(event_ends[pair_event], period_ends[pair_period])
                       - np.maximum(event_starts[pair_event], period_starts[pair_period]))
         durations = pd.Series(pd.to_timedelta(overlap_ns, unit='ns')).dt.total_seconds() / 3600
+        if 'hours_factor' in df:
+            # Only part of a long event counts (e.g. its waking hours).
+            durations *= df['hours_factor'].fillna(1.0).to_numpy()[event_rows[pair_event]]
         mask = (durations > 0).to_numpy()
         if not mask.any():
             return pd.DataFrame()
@@ -497,6 +500,14 @@ def show_data_quality(df_all_events, df_counted, start_date, end_date, accuracy)
     double_counted = max(raw_hours - union_hours(timed), 0.0)
 
     excluded = accuracy.get("long_events") == "exclude"
+    awake = accuracy.get("long_events") == "awake"
+    # Long events that count (free ones may be ignored): their full hours and
+    # the hours they count as awake.
+    counted_long = clip_to_range(df_counted, start_date, end_date)
+    counted_long = counted_long[long_event_mask(counted_long, max_hours)]
+    counted_long_hours = counted_long["duration_hours"].sum()
+    counted_long_full = clip_to_range(df_counted.drop(columns="hours_factor", errors="ignore"),
+                                      start_date, end_date).loc[counted_long.index, "duration_hours"].sum()
     label = "🩺 Data Quality"
     if not long_events.empty or double_counted > 0.05:
         label += " — check your totals"
@@ -512,6 +523,7 @@ def show_data_quality(df_all_events, df_counted, start_date, end_date, accuracy)
             "Hours in long events",
             f"{long_events['duration_hours'].sum():.1f}h",
             delta=("excluded" if excluded else
+                   f"{counted_long_hours:.1f}h awake of {counted_long_full:.1f}h counted" if awake else
                    f"{long_events['duration_hours'].sum() / total_hours * 100:.0f}% of total" if total_hours else None),
             delta_color="off",
         )
@@ -522,7 +534,9 @@ def show_data_quality(df_all_events, df_counted, start_date, end_date, accuracy)
         )
         st.caption(
             "Long events are currently "
-            + ("**excluded** from all totals." if excluded else "**counted fully**.")
+            + ("**excluded** from all totals." if excluded else
+               "counted by their **waking hours only** (nights taken out, see Settings → 📊 Data & display)."
+               if awake else "**counted fully**.")
             + " Change this under ⚖️ Data accuracy in the sidebar."
         )
 

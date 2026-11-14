@@ -8,7 +8,7 @@ import os
 import requests
 import calendar
 from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response, is_free_event, parse_ics
-from utils import clear_event_caches, NOT_TIME_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, render_health_banner, run_parallel
+from utils import clear_event_caches, NOT_TIME_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, count_awake_hours, load_app_settings, render_health_banner, run_parallel
 from calendar_health import FeedError, check_ics_text, feed_stats, fetch_feed, record_check, record_failure
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
@@ -594,6 +594,11 @@ if all_events:
     # cadence match the other pages (which all normalize to local time).
     df = normalize_time(df, tz="local")
     df = drop_free_events(df)
+    # Trips and other long events count only their waking hours if chosen
+    # (Settings → 📊 Data & display). They're never excluded here, so "Last
+    # Seen" still knows about them.
+    if load_app_settings().get("long_events") == "awake":
+        df = count_awake_hours(df)
 
     # Check for "Busy" events
     unique_titles = df['title'].unique()
@@ -635,6 +640,8 @@ if all_events:
                 df_people['end'].clip(upper=period_end) - df_people['start'].clip(lower=period_start)
             ).dt.total_seconds() / 3600
             df_people['duration_hours'] = in_range.clip(lower=0)
+            if 'hours_factor' in df_people:
+                df_people['duration_hours'] *= df_people['hours_factor'].fillna(1.0)
             df_people = df_people[(df_people['duration_hours'] > 0) | (df_people['full_duration_hours'] == 0)]
 
         st.info(f"Analyzing {len(df_filtered)} events from {start_date} to {end_date}")        

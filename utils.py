@@ -486,10 +486,15 @@ DEFAULT_APP_SETTINGS = {
     "goals_history_weeks": 12,
     # Goals: Oura activity goals add the average per weekday ("average") or nothing ("off").
     "goals_activity_estimate": "average",
-    # "include" counts all-day / multi-day events fully, "exclude" drops them.
+    # "include" counts all-day / multi-day events fully, "awake" only their
+    # waking hours, "exclude" drops them.
     "long_events": "include",
     # Events longer than this (hours) count as long even if not all-day.
     "long_event_hours": 16,
+    # "awake": hours of night taken out per night of a long event...
+    "long_event_night_hours": 8,
+    # ...unless the sleep source (Settings → Free slots) recorded that night.
+    "long_event_use_sleep": True,
     # Drop events marked as free / available (iCal TRANSP:TRANSPARENT).
     "ignore_free_events": False,
     # Initial "View data by" choice on every page (calendars.json only).
@@ -590,8 +595,8 @@ def render_accuracy_settings(page_key):
     The choice is stored in app_settings.json so every page uses the same rule.
     """
     settings = load_app_settings()
-    options = ["include", "exclude"]
-    labels = {"include": "Count fully", "exclude": "Exclude"}
+    options = list(LONG_EVENT_MODES)
+    labels = LONG_EVENT_MODES
 
     def _save():
         settings["long_events"] = st.session_state[f"{page_key}_long_events"]
@@ -607,8 +612,10 @@ def render_accuracy_settings(page_key):
             format_func=labels.get,
             key=f"{page_key}_long_events",
             on_change=_save,
-            help="A 3-day trip counts as 72 hours when counted fully. "
-                 "Exclude them to only count timed events.",
+            help="A 3-day trip counts as 72 hours when counted fully, 56 when "
+                 "counting waking hours only (its 2 nights taken out; night length and sleep source "
+                 "are set in Settings → 📊 Data & display). Exclude them to only "
+                 "count timed events.",
         )
         st.number_input(
             "Treat events longer than (hours) as long",
@@ -643,15 +650,49 @@ def drop_free_events(df, settings=None):
     return df
 
 
+LONG_EVENT_MODES = {"include": "Count fully", "awake": "Count waking hours only", "exclude": "Exclude"}
+
+
+def count_awake_hours(df, settings=None):
+    """Count long events by their waking hours only: sets `hours_factor`
+    (used by clip_between) and scales `duration_hours`. Recorded sleep comes
+    from the sleep source of Settings → 💡 Free slots, found in `df` itself;
+    nights without one take out `long_event_night_hours`."""
+    from analysis import awake_factors, long_event_mask
+
+    settings = load_app_settings() if settings is None else settings
+    if df.empty:
+        return df
+    long_rows = long_event_mask(df, settings.get("long_event_hours", 16))
+    if not long_rows.any():
+        return df
+    pairs = []
+    if settings.get("long_event_use_sleep", True):
+        events = df if "event_name" in df else df.rename(columns={"title": "event_name"})
+        if "event_name" not in events:
+            events = events.assign(event_name="")
+        events = events.assign(calendar=events["calendar"].map(normalize_calendar_name))
+        pairs = sleep_pairs(settings, time_events=events)
+    factors = awake_factors(df[long_rows], float(settings.get("long_event_night_hours", 8)), pairs)
+    df = df.copy()
+    if "hours_factor" not in df:
+        df["hours_factor"] = 1.0
+    df.loc[long_rows, "hours_factor"] = df.loc[long_rows, "hours_factor"].fillna(1.0) * factors
+    df.loc[long_rows, "duration_hours"] = df.loc[long_rows, "duration_hours"] * factors
+    return df
+
+
 def apply_accuracy_settings(df, settings=None):
-    """Drop long events from `df` if the user chose to exclude them, and
-    free events if the user chose to ignore them."""
+    """Drop long events from `df` if the user chose to exclude them (or count
+    only their waking hours), and free events if the user chose to ignore them."""
     from analysis import long_event_mask
 
     settings = settings or load_app_settings()
     df = drop_free_events(df, settings)
     if settings.get("long_events") == "exclude" and not df.empty:
         df = df[~long_event_mask(df, settings.get("long_event_hours", 16))]
+    elif settings.get("long_events") == "awake":
+        df = count_awake_hours(df, settings)
     return df
 
 
@@ -824,7 +865,8 @@ def goal_frame(df, goal, kind, settings=None):
     if kind == "sleep" and settings.get("goals_sleep_measure") == "asleep":
         frame = frame.copy()
         mine = frame["calendar"] == goal["name"]
-        frame["hours_factor"] = 1.0
+        if "hours_factor" not in frame:
+            frame["hours_factor"] = 1.0
         frame.loc[mine, "hours_factor"] = asleep_factors(frame[mine])
     return frame
 

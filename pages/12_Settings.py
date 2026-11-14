@@ -13,7 +13,7 @@ from analysis import DAY_GROUPS, SLEEP_ESTIMATES, WEEKDAY_ABBR, is_all_day, merg
 from calendar_store import decode_ics_response, get_cache_file_path, hash_url
 from utils import (
     clear_event_caches,
-    CALENDARS_JSON, DEFAULT_APP_SETTINGS, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings, run_parallel,
+    CALENDARS_JSON, DEFAULT_APP_SETTINGS, LONG_EVENT_MODES, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings, run_parallel,
     load_calendar_urls, load_tag_groups, normalize_calendar_name, normalize_time, read_calendars_config,
     save_app_settings, slot_blocker, write_calendars_config, write_file_with_backup,
 )
@@ -259,18 +259,34 @@ with tab_display:
     settings = load_app_settings()
     with st.form("display_settings"):
         st.markdown("**Counting**")
+        long_options = list(LONG_EVENT_MODES)
         long_events = st.radio(
             "All-day & multi-day events",
-            ["include", "exclude"],
-            index=1 if settings["long_events"] == "exclude" else 0,
-            format_func={"include": "Count fully", "exclude": "Exclude"}.get,
+            long_options,
+            index=long_options.index(settings["long_events"]) if settings["long_events"] in long_options else 0,
+            format_func=LONG_EVENT_MODES.get,
             horizontal=True,
-            help="A 3-day trip counts as 72 hours when counted fully. "
-                 "Also available as ⚖️ Data accuracy in the sidebar of each page.",
+            help="A 3-day trip counts as 72 hours when counted fully, 56 when "
+                 "counting waking hours only (only the nights between its days are taken out). Also available as ⚖️ Data accuracy "
+                 "in the sidebar of each page.",
         )
         long_hours = st.number_input(
             "Treat events longer than (hours) as long", min_value=1, max_value=168,
             value=int(settings["long_event_hours"]), step=1,
+        )
+        night_hours = st.number_input(
+            "Waking hours only: hours of night per night", min_value=0.0, max_value=16.0,
+            value=float(settings.get("long_event_night_hours", 8)), step=0.5,
+            help="Taken out of a long event for every night it spans, e.g. a "
+                 "3-day all-day event counts 56h with 8. Daytime events and single "
+                 "all-day events lose nothing.",
+        )
+        use_sleep = st.checkbox(
+            "Waking hours only: use my recorded sleep where available",
+            value=bool(settings.get("long_event_use_sleep", True)),
+            help="Takes out the sleep your sleep source (💡 Free slots tab) recorded "
+                 "during the event instead of the fixed night, e.g. 6.5h on a short "
+                 "night. Nights without recorded sleep still use the fixed hours.",
         )
         ignore_free = st.checkbox(
             "Ignore events marked as free",
@@ -355,6 +371,8 @@ with tab_display:
                 "goals_activity_estimate": activity_mode,
                 "long_events": long_events,
                 "long_event_hours": int(long_hours),
+                "long_event_night_hours": float(night_hours),
+                "long_event_use_sleep": bool(use_sleep),
                 "ignore_free_events": bool(ignore_free),
                 "default_view": default_view,
                 "default_range_months": int(default_range),

@@ -42,6 +42,45 @@ def long_event_mask(df, max_hours=16):
     return is_all_day(df["start"], df["end"]) | (hours > max_hours)
 
 
+def awake_factors(df, night_hours=8.0, sleep=()):
+    """Share of each event's time spent awake, to count long events (trips,
+    all-day events) by waking hours. Only nights the event spans count:
+    timed events lose the night time they overlap (a 7:00-23:00 event loses
+    nothing), all-day events the nights between their days (one day: none,
+    a 3-day trip: two). Nights with recorded sleep ((bed, wake) pairs) take
+    out that sleep; other nights a fixed night of `night_hours` centred on
+    3:00 (8h = 23:00 to 7:00)."""
+    if df.empty:
+        return pd.Series(dtype=float, index=df.index)
+    tz = df["start"].dt.tz
+    half = round(night_hours * 30)
+    # A fixed night for every weekday, in minutes after noon (3:00 = 900).
+    usual = {wd: (900 - half, 900 + half) for wd in range(7)} if half > 0 else {}
+    index = sleep_pair_index(list(sleep))
+    all_day = is_all_day(df["start"], df["end"])
+    factors = []
+    for s, e, whole_days in zip(df["start"], df["end"], all_day):
+        hours = (e - s).total_seconds() / 3600
+        if hours <= 0:
+            factors.append(1.0)
+            continue
+        lo, hi = s, e
+        if whole_days:
+            # Stored from noon UTC, so its hours don't line up with local
+            # nights: count the nights from noon of the first day to noon of
+            # the last day instead.
+            first = s.tz_convert("UTC").date()
+            last = e.tz_convert("UTC").date() - timedelta(days=1)
+            lo, hi = _local_time(first, 12 * 60, tz), _local_time(last, 12 * 60, tz)
+        if hi <= lo:
+            factors.append(1.0)
+            continue
+        intervals, _ = sleep_intervals(index[0], lo, hi, tz, s, fallback=bool(usual), usual=usual, index=index)
+        asleep = sum((b - a).total_seconds() for a, b in intervals) / 3600
+        factors.append(max(0.0, hours - asleep) / hours)
+    return pd.Series(factors, index=df.index, dtype=float)
+
+
 # --- Clipping to a time window ---
 
 def local_midnight(d, tz):
