@@ -656,8 +656,10 @@ LONG_EVENT_MODES = {"include": "Count fully", "awake": "Count waking hours only"
 def count_awake_hours(df, settings=None):
     """Count long events by their waking hours only: sets `hours_factor`
     (used by clip_between) and scales `duration_hours`. Recorded sleep comes
-    from the sleep source of Settings → 💡 Free slots, found in `df` itself;
-    nights without one take out `long_event_night_hours`."""
+    from the sleep source of Settings → 💡 Free slots, read from the cache
+    (so it's found even when `df` leaves out the sleep calendar or its
+    events are marked free); nights without one take out
+    `long_event_night_hours`."""
     from analysis import awake_factors, long_event_mask
 
     settings = load_app_settings() if settings is None else settings
@@ -668,11 +670,9 @@ def count_awake_hours(df, settings=None):
         return df
     pairs = []
     if settings.get("long_event_use_sleep", True):
-        events = df if "event_name" in df else df.rename(columns={"title": "event_name"})
-        if "event_name" not in events:
-            events = events.assign(event_name="")
-        events = events.assign(calendar=events["calendar"].map(normalize_calendar_name))
-        pairs = sleep_pairs(settings, time_events=events)
+        markers = settings.get("slots_sleep_mode") == "markers"
+        pairs = sleep_pairs(settings, time_events=load_raw_events("time"),
+                            tag_events=load_raw_events("tags") if markers else None)
     factors = awake_factors(df[long_rows], float(settings.get("long_event_night_hours", 8)), pairs)
     df = df.copy()
     if "hours_factor" not in df:

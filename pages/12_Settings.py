@@ -288,6 +288,14 @@ with tab_display:
                  "during the event instead of the fixed night, e.g. 6.5h on a short "
                  "night. Nights without recorded sleep still use the fixed hours.",
         )
+        sleep_source = settings.get("slots_sleep_mode", "none")
+        if sleep_source in ("calendar", "calendar_plan"):
+            st.caption(f"Recorded sleep comes from the **{settings.get('slots_sleep_calendar') or '?'}** "
+                       "calendar (💡 Free slots tab).")
+        elif sleep_source == "markers":
+            st.caption("Recorded sleep comes from your bedtime and wake-up markers (💡 Free slots tab).")
+        else:
+            st.caption("No sleep source is set in the 💡 Free slots tab, so every night uses the fixed hours.")
         ignore_free = st.checkbox(
             "Ignore events marked as free",
             value=bool(settings.get("ignore_free_events")),
