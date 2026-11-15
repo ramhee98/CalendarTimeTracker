@@ -993,7 +993,9 @@ def goal_estimate(df, goal, kind, first, end, now, settings=None):
         note = ""
         if days > 0:
             per_day = ", ".join(f"{WEEKDAY_ABBR[wd]} {usual[wd]:.1f}h" for wd in range(7))
-            note = (f"👟 **{goal['name']}**: the rest of today and {days - 1} more day(s) are estimated "
+            which = (f"all {days} day(s)" if first > now.date()
+                     else f"the rest of today and {days - 1} more day(s)")
+            note = (f"👟 **{goal['name']}**: {which} are estimated "
                     f"(+{hours:.1f}h) from your average of the last 4 weeks: {per_day}.")
         return {"hours": hours, "note": note}
     return None
@@ -1006,7 +1008,8 @@ def evaluate_goals(df, goals, now, history=12, tags=None, groups=(), history_wee
     result["estimate_note"]). `history` complete periods are evaluated, or
     with `history_weeks` as many as cover that many weeks for each goal's
     period (84 days, 12 weeks or 3 months for 12 weeks)."""
-    from analysis import estimated_goal_status, evaluate_goal, history_periods
+    from analysis import (estimated_goal_status, evaluate_goal, goal_amount, goal_events, history_periods,
+                          next_goal_status, next_period_start)
 
     settings = load_app_settings()
     results = []
@@ -1014,7 +1017,22 @@ def evaluate_goals(df, goals, now, history=12, tags=None, groups=(), history_wee
         kind = goal_estimate_kind(df, goal, settings)
         frame = goal_frame(df, goal, kind, settings)
         periods = history if history_weeks is None else history_periods(goal.get("period", "week"), history_weeks)
-        r = evaluate_goal(goal_counted_frame(frame, goal, kind), goal, now, periods, tags, groups)
+        counted = goal_counted_frame(frame, goal, kind)
+        r = evaluate_goal(counted, goal, now, periods, tags, groups)
+        # The next period, for planning: booked so far (plus the estimate
+        # for sleep and Oura activity goals).
+        first = next_period_start(r["period"], r["period_start"])
+        end = next_period_start(r["period"], first)
+        tz = df["start"].dt.tz if not df.empty else now.tz
+        nxt = {"period_start": first, "period_end": end - timedelta(days=1),
+               "booked": goal_amount(goal, goal_events(counted, goal, tags, groups), first, end, tz=tz)}
+        if kind:
+            est = goal_estimate(frame, goal, kind, first, end, now, settings)
+            if est is not None:
+                nxt["expected"] = nxt["booked"] + est["hours"]
+                nxt["estimate_note"] = est["note"]
+        nxt["status"], nxt["status_label"] = next_goal_status(goal, nxt["booked"], nxt.get("expected"))
+        r["next"] = nxt
         if kind == "sleep" and settings.get("goals_sleep_measure") == "asleep":
             r["measure"] = "actual sleep"
         if kind:
@@ -1053,6 +1071,32 @@ def render_goal_progress(goal, result):
             f"{icon} **{goal['name']}** ({type_name.lower()}{measure}) · {amounts} "
             f"{goal_target_text(goal)} {this_period_text(result['period'])}"
             f" — {result['status_label']}"
+        ),
+    )
+
+
+def render_next_goal_progress(goal, result):
+    """One progress bar for a goal's next period (Goals page, planning view):
+    booked so far, or expected for sleep and Oura activity goals."""
+    from analysis import format_goal_amount, goal_target_text, is_tag_goal, period_label
+
+    nxt = result["next"]
+    icon, type_name = GOAL_TYPE_LABELS.get(goal["type"], ("", goal["type"]))
+    target = goal["min"] if goal["min"] is not None else goal["max"]
+    amount = nxt.get("expected", nxt["booked"])
+    fraction = min(amount / target, 1.0) if target else 0.0
+    if "expected" in nxt:
+        amounts = (f"{format_goal_amount(goal, nxt['booked'])} booked, "
+                   f"~{format_goal_amount(goal, nxt['expected'])} expected of")
+    else:
+        amounts = f"{format_goal_amount(goal, nxt['booked'])} {'planned' if is_tag_goal(goal) else 'booked'} of"
+    measure = f", {result['measure']}" if result.get("measure") else ""
+    st.progress(
+        fraction,
+        text=(
+            f"{icon} **{goal['name']}** ({type_name.lower()}{measure}) · {amounts} "
+            f"{goal_target_text(goal)} in {period_label(result['period'], nxt['period_start'])}"
+            f" — {nxt['status_label']}"
         ),
     )
 

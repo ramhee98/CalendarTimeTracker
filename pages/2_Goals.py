@@ -3,7 +3,7 @@ import pandas as pd
 import altair as alt
 from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
-    load_goals, save_goals, render_goal_progress, goal_type_label, GOAL_TYPE_LABELS,
+    load_goals, save_goals, render_goal_progress, render_next_goal_progress, goal_type_label, GOAL_TYPE_LABELS,
     load_tag_occurrences, load_tag_groups, load_app_settings, slot_blocker, evaluate_goals, goal_estimate_kind,
 )
 from analysis import (
@@ -124,28 +124,56 @@ history_weeks = st.slider(
 with st.spinner("Evaluating goals..."):
     results = evaluate_goals(df, goals, now, tags=tags, groups=tag_groups, history_weeks=history_weeks)
 
-st.subheader("This Period")
-for goal, r in results:
-    render_goal_progress(goal, r)
-for goal, r in results:
-    if r.get("estimate_note"):
-        st.caption(r["estimate_note"])
+view = st.radio(
+    "Show", ["current", "next"], horizontal=True, key="goals_view",
+    format_func={"current": "This period", "next": "Next period (plan it)"}.get,
+    help="Next period = tomorrow for daily goals, next week for weekly goals and next month for monthly goals: "
+         "what's booked so far, how much is still missing and free slots to close the gap.",
+)
+planning = view == "next"
 
-overview = pd.DataFrame([{
-    "Goal": target_label(g["type"], g["name"]),
-    "Target": f"{goal_target_text(g)} / {g['period']}",
-    "Done": format_goal_amount(g, r["done"]),
-    "Booked": (f"~{format_goal_amount(g, r['expected'])} expected" if "expected" in r
-               else format_goal_amount(g, r["booked"])),
-    "Status": r["status_label"],
-    "Streak": f"{r['streak']} {g['period']}{'s' if r['streak'] != 1 else ''}",
-    "Hit rate": f"{r['met_count']}/{r['history_count']}" if r["history_count"] else "—",
-} for g, r in results])
-st.dataframe(overview, use_container_width=True, hide_index=True)
-st.caption("Done = hours (or tags) already passed this period, Booked = done plus events still scheduled; "
-           "for sleep and Oura activity goals, plus an estimate from the last 4 weeks of what isn't recorded yet. "
-           "Streak and hit rate count complete periods only. Tags are read from the local cache; "
-           "🔄 Sync Calendars updates them too unless Sync is limited to the page's calendars.")
+if planning:
+    st.subheader("Next Period")
+    for goal, r in results:
+        render_next_goal_progress(goal, r)
+    for goal, r in results:
+        if r["next"].get("estimate_note"):
+            st.caption(r["next"]["estimate_note"])
+    overview = pd.DataFrame([{
+        "Goal": target_label(g["type"], g["name"]),
+        "Target": f"{goal_target_text(g)} / {g['period']}",
+        "Period": period_label(g["period"], r["next"]["period_start"]),
+        "Booked": (f"~{format_goal_amount(g, r['next']['expected'])} expected" if "expected" in r["next"]
+                   else format_goal_amount(g, r["next"]["booked"])),
+        "Status": r["next"]["status_label"],
+    } for g, r in results])
+    st.dataframe(overview, use_container_width=True, hide_index=True)
+    st.caption("Booked = events already in your calendars for the next period. Future calendars are usually "
+               "incomplete, so this is what's booked so far, not a forecast. Sleep and Oura activity goals add "
+               "an estimate from the last 4 weeks for every night or day.")
+else:
+    st.subheader("This Period")
+    for goal, r in results:
+        render_goal_progress(goal, r)
+    for goal, r in results:
+        if r.get("estimate_note"):
+            st.caption(r["estimate_note"])
+
+    overview = pd.DataFrame([{
+        "Goal": target_label(g["type"], g["name"]),
+        "Target": f"{goal_target_text(g)} / {g['period']}",
+        "Done": format_goal_amount(g, r["done"]),
+        "Booked": (f"~{format_goal_amount(g, r['expected'])} expected" if "expected" in r
+                   else format_goal_amount(g, r["booked"])),
+        "Status": r["status_label"],
+        "Streak": f"{r['streak']} {g['period']}{'s' if r['streak'] != 1 else ''}",
+        "Hit rate": f"{r['met_count']}/{r['history_count']}" if r["history_count"] else "—",
+    } for g, r in results])
+    st.dataframe(overview, use_container_width=True, hide_index=True)
+    st.caption("Done = hours (or tags) already passed this period, Booked = done plus events still scheduled; "
+               "for sleep and Oura activity goals, plus an estimate from the last 4 weeks of what isn't recorded "
+               "yet. Streak and hit rate count complete periods only. Tags are read from the local cache; "
+               "🔄 Sync Calendars updates them too unless Sync is limited to the page's calendars.")
 
 # --- Free-slot suggestions ---
 st.subheader("💡 Suggested slots")
@@ -156,9 +184,10 @@ if not time_min_goals:
     st.caption("Suggestions are made for calendar and category goals with a Min "
                "(not for sleep or Oura activity, which are recorded after the fact).")
 else:
-    plan = st.radio("Plan for", ["current", "next"], horizontal=True, key="slots_plan",
-                    format_func={"current": "The rest of this day / week / month",
-                                 "next": "The next day / week / month"}.get)
+    # Suggestions follow the view: the rest of this period, or the next one.
+    plan = "next" if planning else "current"
+    st.caption("For the next day, week or month." if planning else
+               "For the rest of this day, week or month. Switch to **Next period** above to plan the next one.")
     slot_settings = app_settings
     # Blocking uses every event (long and free ones too): the free-slot
     # settings decide what blocks, not the data-accuracy rules.
@@ -226,9 +255,17 @@ for goal, r in results:
     unit = "Times" if is_tag_goal(goal) else "Hours"
     hist = r["history"].reset_index()
     hist["state"] = hist["met"].map({True: "Met", False: "Missed"})
-    current = pd.DataFrame([{"period_start": r["period_start"], "value": r["booked"], "state": "Current (booked)"}])
-    chart_df = pd.concat([hist[["period_start", "value", "state"]], current], ignore_index=True)
+    # Sleep and Oura activity goals show what's expected, as in the progress bars.
+    current_state = "Current (expected)" if "expected" in r else "Current (booked)"
+    rows = [{"period_start": r["period_start"], "value": r.get("expected", r["booked"]), "state": current_state}]
+    if planning:
+        nxt = r["next"]
+        rows.append({"period_start": nxt["period_start"], "value": nxt.get("expected", nxt["booked"]),
+                     "state": "Next (expected)" if "expected" in nxt else "Next (booked)"})
+    chart_df = pd.concat([hist[["period_start", "value", "state"]], pd.DataFrame(rows)], ignore_index=True)
     chart_df["label"] = [period_label(period, d) for d in chart_df["period_start"]]
+    states = ["Met", "Missed", current_state] + ([rows[-1]["state"]] if planning else [])
+    colors = ["#2e7d32", "#c62828", "#9e9e9e"] + (["#1e88e5"] if planning else [])
 
     bars = alt.Chart(chart_df).mark_bar().encode(
         x=alt.X("label:N", title=period.title(), sort=None, axis=alt.Axis(labelAngle=-45)),
@@ -236,7 +273,7 @@ for goal, r in results:
         color=alt.Color(
             "state:N",
             title="",
-            scale=alt.Scale(domain=["Met", "Missed", "Current (booked)"], range=["#2e7d32", "#c62828", "#9e9e9e"]),
+            scale=alt.Scale(domain=states, range=colors),
         ),
         tooltip=[alt.Tooltip("label:N", title=period.title()), alt.Tooltip("value:Q", title=unit, format=".1f"),
                  "state:N"],

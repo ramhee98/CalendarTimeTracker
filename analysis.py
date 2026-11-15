@@ -375,6 +375,27 @@ def estimated_goal_status(goal, done, expected):
     return key, label
 
 
+def next_goal_status(goal, booked, expected=None):
+    """Status of a goal for the next period, which hasn't started: only what's
+    booked so far counts, or `expected` (booked + estimate) for sleep and
+    Oura activity goals. Returns (key, label)."""
+    amount = booked if expected is None else expected
+    est = expected is not None
+    mn, mx = goal.get("min"), goal.get("max")
+    tag = is_tag_goal(goal)
+    if mx is not None and amount > mx + 1e-9:
+        return "at_risk", "⚠️ Expected over budget" if est else (
+            "⚠️ Planned over the limit" if tag else "⚠️ Booked over budget")
+    if mn is not None:
+        if amount >= mn - 1e-9:
+            return "on_track", "📈 On track (estimated)" if est else "✅ Booked enough"
+        short = mn - amount
+        if est:
+            return "behind", f"⚠️ ~{short:.1f}h short (estimated)"
+        return "behind", f"⚠️ {short:g}× to go" if tag else f"⚠️ {short:.1f}h still to plan"
+    return "met", "✅ Within the limit so far" if tag else "✅ Within budget so far"
+
+
 def tag_goal_occurrences(tags, goal, groups=()):
     """Tag occurrences counted by a tag or tag group goal.
 
