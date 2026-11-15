@@ -47,21 +47,50 @@ def on_wake_day(df, mask=None):
     starts at the midnight before its end at the earliest, with
     `hours_factor` scaled so it still counts its full hours (times any factor
     it had). Clipping it to days, weeks or months then puts the whole night
-    in the period of its wake-up day instead of splitting it at midnight."""
+    in the period of its wake-up day instead of splitting it at midnight.
+
+    The real bedtime is kept in `bed_start` (and the scale in `wake_scale`)
+    for `restore_bed_times`; rows moved before are left alone."""
     if df.empty:
         return df
     mask = pd.Series(True, index=df.index) if mask is None else mask
     timed = mask & (df["end"] > df["start"]) & ~is_all_day(df["start"], df["end"])
+    if "bed_start" in df:
+        timed &= df["bed_start"].isna()
     if not timed.any():
         return df
     out = df.copy()
     start, end = out.loc[timed, "start"], out.loc[timed, "end"]
     wake_midnight = (end - pd.Timedelta(microseconds=1)).dt.normalize()
     moved = start.where(start >= wake_midnight, wake_midnight)
+    scale = (end - start) / (end - moved)
     if "hours_factor" not in out:
         out["hours_factor"] = 1.0
-    out.loc[timed, "hours_factor"] = out.loc[timed, "hours_factor"].fillna(1.0) * ((end - start) / (end - moved))
+    if "bed_start" not in out:
+        out["bed_start"] = out["start"].where(pd.Series(False, index=out.index))
+        out["wake_scale"] = float("nan")
+    out.loc[timed, "bed_start"] = start
+    out.loc[timed, "wake_scale"] = scale
+    out.loc[timed, "hours_factor"] = out.loc[timed, "hours_factor"].fillna(1.0) * scale
     out.loc[timed, "start"] = moved
+    return out
+
+
+def restore_bed_times(df, mask=None):
+    """Undo `on_wake_day` (for `mask` rows): real bedtimes and factors back,
+    e.g. for estimating usual sleep from the real bed and wake-up times."""
+    if df.empty or "bed_start" not in df:
+        return df
+    rows = df["bed_start"].notna()
+    if mask is not None:
+        rows &= mask
+    if not rows.any():
+        return df
+    out = df.copy()
+    out.loc[rows, "start"] = out.loc[rows, "bed_start"]
+    out.loc[rows, "hours_factor"] = out.loc[rows, "hours_factor"] / out.loc[rows, "wake_scale"]
+    out.loc[rows, "bed_start"] = pd.NaT
+    out.loc[rows, "wake_scale"] = float("nan")
     return out
 
 

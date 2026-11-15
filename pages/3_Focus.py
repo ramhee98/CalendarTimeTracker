@@ -17,7 +17,7 @@ st.caption(
 all_events, _ = load_events_for_page("focus")
 # Every event counts here (long and free ones too): the free-slot settings
 # decide what blocks time, not the data-accuracy rules.
-raw = build_events_df(all_events, {"long_events": "include", "ignore_free_events": False})
+raw = build_events_df(all_events, {"long_events": "include", "ignore_free_events": False}, wake_day=False)
 settings = load_app_settings()
 tz = raw["start"].dt.tz
 now = pd.Timestamp.now(tz=tz)

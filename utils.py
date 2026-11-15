@@ -650,6 +650,9 @@ def drop_free_events(df, settings=None):
     return df
 
 
+SLEEP_NAME_WORDS = ("sleep", "schlaf")
+
+
 def sleep_calendar_names(settings=None):
     """The sleep calendar of Settings → 💡 Free slots, as a set (empty if the
     sleep source isn't a calendar)."""
@@ -659,6 +662,17 @@ def sleep_calendar_names(settings=None):
     return set()
 
 
+def sleep_calendar_mask(df, settings=None):
+    """True for events of a sleep calendar: the one of Settings → 💡 Free
+    slots, or a calendar named like one ("sleep", "schlaf"), as for sleep goals."""
+    if df.empty or "calendar" not in df:
+        return pd.Series(False, index=df.index)
+    names = df["calendar"].map(normalize_calendar_name)
+    configured = sleep_calendar_names(settings)
+    named = names.str.casefold().str.contains("|".join(SLEEP_NAME_WORDS), regex=True, na=False)
+    return names.isin(configured) | named
+
+
 def long_events_mask(df, settings=None):
     """True for the long events of `df` (all-day events and events longer
     than `long_event_hours`), except sleep calendar events: a 9h night is
@@ -666,11 +680,7 @@ def long_events_mask(df, settings=None):
     from analysis import long_event_mask
 
     settings = load_app_settings() if settings is None else settings
-    mask = long_event_mask(df, settings.get("long_event_hours", 16))
-    sleep = sleep_calendar_names(settings)
-    if sleep and not df.empty and "calendar" in df:
-        mask &= ~df["calendar"].map(normalize_calendar_name).isin(sleep)
-    return mask
+    return long_event_mask(df, settings.get("long_event_hours", 16)) & ~sleep_calendar_mask(df, settings)
 
 
 LONG_EVENT_MODES = {"include": "Count fully", "awake": "Count waking hours only", "exclude": "Exclude"}
@@ -705,15 +715,24 @@ def count_awake_hours(df, settings=None):
     return df
 
 
-def apply_accuracy_settings(df, settings=None):
+def apply_accuracy_settings(df, settings=None, wake_day=True):
     """Drop long events from `df` if the user chose to exclude them (or count
-    only their waking hours), and free events if the user chose to ignore them."""
+    only their waking hours), and free events if the user chose to ignore them.
+
+    With `wake_day`, sleep calendar events count as whole nights on their
+    wake-up day (`on_wake_day`): their start moves to that midnight, the real
+    bedtime stays in `bed_start`. Leave it off where real times matter
+    (free slots, Focus)."""
+    from analysis import on_wake_day
+
     settings = settings or load_app_settings()
     df = drop_free_events(df, settings)
     if settings.get("long_events") == "exclude" and not df.empty:
         df = df[~long_events_mask(df, settings)]
     elif settings.get("long_events") == "awake":
         df = count_awake_hours(df, settings)
+    if wake_day and not df.empty:
+        df = on_wake_day(df, sleep_calendar_mask(df, settings))
     return df
 
 
@@ -802,13 +821,13 @@ def load_events_for_page(page_key, kind="time", stop_if_empty=True):
     return all_events, source_type
 
 
-def build_events_df(all_events, accuracy=None):
+def build_events_df(all_events, accuracy=None, wake_day=True):
     """Events DataFrame with local times, display calendar names and the
-    data-accuracy rule applied."""
+    data-accuracy rule applied (see `apply_accuracy_settings`)."""
     df = pd.DataFrame(all_events)
     df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
     df = normalize_time(df, tz="local")
-    return apply_accuracy_settings(df, accuracy)
+    return apply_accuracy_settings(df, accuracy, wake_day=wake_day)
 
 
 def default_view_index():
@@ -854,7 +873,7 @@ def is_sleep_goal(goal, settings=None):
     settings = load_app_settings() if settings is None else settings
     sleep_calendar = settings.get("slots_sleep_calendar") if settings.get("slots_sleep_mode") in (
         "calendar", "calendar_plan") else None
-    return goal["name"] == sleep_calendar or any(w in goal["name"].casefold() for w in ("sleep", "schlaf"))
+    return goal["name"] == sleep_calendar or any(w in goal["name"].casefold() for w in SLEEP_NAME_WORDS)
 
 
 def goal_estimate_kind(df, goal, settings=None):
@@ -879,7 +898,10 @@ def goal_frame(df, goal, kind, settings=None):
     their title ("Sleep: 7:17") instead of their time in bed."""
     if kind not in ("sleep", "activity"):
         return df
-    from analysis import asleep_factors, is_all_day
+    from analysis import asleep_factors, is_all_day, restore_bed_times
+    # Real bed and wake-up times for the estimate; goal_counted_frame moves
+    # the nights to their wake-up day again for counting.
+    df = restore_bed_times(df, df["calendar"] == goal["name"])
     mine = df["calendar"] == goal["name"]
     frame = df[~(mine & is_all_day(df["start"], df["end"]))]
     settings = load_app_settings() if settings is None else settings

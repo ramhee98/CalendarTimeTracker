@@ -162,7 +162,7 @@ else:
     slot_settings = app_settings
     # Blocking uses every event (long and free ones too): the free-slot
     # settings decide what blocks, not the data-accuracy rules.
-    raw_df = build_events_df(all_events, {"long_events": "include", "ignore_free_events": False})
+    raw_df = build_events_df(all_events, {"long_events": "include", "ignore_free_events": False}, wake_day=False)
     with st.spinner("Looking for free time..."):
         blocked_for, nights_for = slot_blocker(slot_settings, now, time_events=raw_df)
         plans = suggest_goal_slots(
