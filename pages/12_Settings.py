@@ -273,6 +273,7 @@ with tab_display:
         long_hours = st.number_input(
             "Treat events longer than (hours) as long", min_value=1, max_value=168,
             value=int(settings["long_event_hours"]), step=1,
+            help="Events of the sleep calendar (💡 Free slots tab) never count as long.",
         )
         night_hours = st.number_input(
             "Waking hours only: hours of night per night", min_value=0.0, max_value=16.0,

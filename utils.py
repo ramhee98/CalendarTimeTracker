@@ -650,6 +650,29 @@ def drop_free_events(df, settings=None):
     return df
 
 
+def sleep_calendar_names(settings=None):
+    """The sleep calendar of Settings → 💡 Free slots, as a set (empty if the
+    sleep source isn't a calendar)."""
+    settings = load_app_settings() if settings is None else settings
+    if settings.get("slots_sleep_mode") in ("calendar", "calendar_plan") and settings.get("slots_sleep_calendar"):
+        return {settings["slots_sleep_calendar"]}
+    return set()
+
+
+def long_events_mask(df, settings=None):
+    """True for the long events of `df` (all-day events and events longer
+    than `long_event_hours`), except sleep calendar events: a 9h night is
+    sleep, not a trip, and must not lose its night or be excluded."""
+    from analysis import long_event_mask
+
+    settings = load_app_settings() if settings is None else settings
+    mask = long_event_mask(df, settings.get("long_event_hours", 16))
+    sleep = sleep_calendar_names(settings)
+    if sleep and not df.empty and "calendar" in df:
+        mask &= ~df["calendar"].map(normalize_calendar_name).isin(sleep)
+    return mask
+
+
 LONG_EVENT_MODES = {"include": "Count fully", "awake": "Count waking hours only", "exclude": "Exclude"}
 
 
@@ -660,12 +683,12 @@ def count_awake_hours(df, settings=None):
     (so it's found even when `df` leaves out the sleep calendar or its
     events are marked free); nights without one take out
     `long_event_night_hours`."""
-    from analysis import awake_factors, long_event_mask
+    from analysis import awake_factors
 
     settings = load_app_settings() if settings is None else settings
     if df.empty:
         return df
-    long_rows = long_event_mask(df, settings.get("long_event_hours", 16))
+    long_rows = long_events_mask(df, settings)
     if not long_rows.any():
         return df
     pairs = []
@@ -685,12 +708,10 @@ def count_awake_hours(df, settings=None):
 def apply_accuracy_settings(df, settings=None):
     """Drop long events from `df` if the user chose to exclude them (or count
     only their waking hours), and free events if the user chose to ignore them."""
-    from analysis import long_event_mask
-
     settings = settings or load_app_settings()
     df = drop_free_events(df, settings)
     if settings.get("long_events") == "exclude" and not df.empty:
-        df = df[~long_event_mask(df, settings.get("long_event_hours", 16))]
+        df = df[~long_events_mask(df, settings)]
     elif settings.get("long_events") == "awake":
         df = count_awake_hours(df, settings)
     return df

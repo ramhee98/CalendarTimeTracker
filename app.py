@@ -16,10 +16,10 @@ from utils import (
     default_view_index,
     load_calendar_urls, load_all_events, load_all_events_from_cache, parse_ics_from_url,
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
-    build_events_df, run_parallel, load_goals, render_goal_progress, evaluate_goals, render_health_banner, load_tag_occurrences, load_tag_groups,
+    build_events_df, long_events_mask, run_parallel, load_goals, render_goal_progress, evaluate_goals, render_health_banner, load_tag_occurrences, load_tag_groups,
 )
 from analysis import (
-    clip_to_range, long_event_mask, find_overlaps, union_hours, is_tag_goal,
+    clip_to_range, find_overlaps, union_hours, is_tag_goal,
     booked_weeks, period_label,
 )
 
@@ -491,10 +491,10 @@ def show_data_quality(df_all_events, df_counted, start_date, end_date, accuracy)
     """Flag long events and overlapping events that distort the totals."""
     max_hours = accuracy.get("long_event_hours", 16)
     in_range = clip_to_range(df_all_events, start_date, end_date)
-    long_mask = long_event_mask(in_range, max_hours)
+    long_mask = long_events_mask(in_range, accuracy)
     long_events = in_range[long_mask]
     timed = clip_to_range(df_counted, start_date, end_date)
-    timed = timed[~long_event_mask(timed, max_hours)]
+    timed = timed[~long_events_mask(timed, accuracy)]
     overlaps = find_overlaps(timed)
     raw_hours = ((timed["end"] - timed["start"]).dt.total_seconds() / 3600).sum()
     double_counted = max(raw_hours - union_hours(timed), 0.0)
@@ -504,7 +504,7 @@ def show_data_quality(df_all_events, df_counted, start_date, end_date, accuracy)
     # Long events that count (free ones may be ignored): their full hours and
     # the hours they count as awake.
     counted_long = clip_to_range(df_counted, start_date, end_date)
-    counted_long = counted_long[long_event_mask(counted_long, max_hours)]
+    counted_long = counted_long[long_events_mask(counted_long, accuracy)]
     counted_long_hours = counted_long["duration_hours"].sum()
     counted_long_full = clip_to_range(df_counted.drop(columns="hours_factor", errors="ignore"),
                                       start_date, end_date).loc[counted_long.index, "duration_hours"].sum()
@@ -517,7 +517,7 @@ def show_data_quality(df_all_events, df_counted, start_date, end_date, accuracy)
         c1.metric(
             "Long events",
             f"{len(long_events)}",
-            help=f"All-day events and events longer than {max_hours}h.",
+            help=f"All-day events and events longer than {max_hours}h (sleep calendar events never count).",
         )
         c2.metric(
             "Hours in long events",

@@ -5,11 +5,11 @@ from datetime import date, timedelta
 from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
     select_group_mode, load_goals, load_tag_occurrences, load_tag_groups,
-    load_app_settings, goal_estimate_kind, goal_frame, goal_estimate,
+    load_app_settings, goal_estimate_kind, goal_frame, goal_estimate, long_events_mask,
 )
 from analysis import (
     clip_between, local_midnight, period_start, period_label, typical_week,
-    hours_by_period, goal_events, goal_status, goal_target_text, long_event_mask,
+    hours_by_period, goal_events, goal_status, goal_target_text,
     goal_amount, format_goal_amount, is_tag_goal, estimated_goal_status,
 )
 
@@ -67,7 +67,7 @@ if week == this_week:
     st.info("This week isn't over yet: totals include events still scheduled for the rest of the week.")
 
 # --- Headline metrics ---
-timed = week_df[~long_event_mask(week_df, accuracy.get("long_event_hours", 16))]
+timed = week_df[~long_events_mask(week_df, accuracy)]
 daily = pd.Series(
     {week + timedelta(days=i): clip_between(df, local_midnight(week + timedelta(days=i), tz),
                                             local_midnight(week + timedelta(days=i + 1), tz))["duration_hours"].sum()
