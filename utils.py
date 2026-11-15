@@ -892,6 +892,15 @@ def goal_frame(df, goal, kind, settings=None):
     return frame
 
 
+def goal_counted_frame(frame, goal, kind):
+    """The goal frame as counted for done, booked and history: sleep goals
+    count every night on its wake-up day (not split at midnight)."""
+    if kind != "sleep" or frame.empty:
+        return frame
+    from analysis import on_wake_day
+    return on_wake_day(frame, frame["calendar"] == goal["name"])
+
+
 def sleep_plan_for(settings):
     """{night: (bed, wake)} from the go_to_bed calendar (the configured one,
     else every calendar with go-to-bed- UIDs) in the local cache."""
@@ -983,7 +992,7 @@ def evaluate_goals(df, goals, now, history=12, tags=None, groups=(), history_wee
         kind = goal_estimate_kind(df, goal, settings)
         frame = goal_frame(df, goal, kind, settings)
         periods = history if history_weeks is None else history_periods(goal.get("period", "week"), history_weeks)
-        r = evaluate_goal(frame, goal, now, periods, tags, groups)
+        r = evaluate_goal(goal_counted_frame(frame, goal, kind), goal, now, periods, tags, groups)
         if kind == "sleep" and settings.get("goals_sleep_measure") == "asleep":
             r["measure"] = "actual sleep"
         if kind:

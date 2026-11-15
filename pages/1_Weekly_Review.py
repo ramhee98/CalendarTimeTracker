@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
     select_group_mode, load_goals, load_tag_occurrences, load_tag_groups,
-    load_app_settings, goal_estimate_kind, goal_frame, goal_estimate, long_events_mask,
+    load_app_settings, goal_estimate_kind, goal_frame, goal_estimate, goal_counted_frame, long_events_mask,
 )
 from analysis import (
     clip_between, local_midnight, period_start, period_label, typical_week,
@@ -165,7 +165,7 @@ if weekly_goals:
         # an estimate of what isn't recorded yet.
         kind = goal_estimate_kind(df, goal, settings)
         frame = goal_frame(df, goal, kind, settings)
-        sub = goal_events(frame, goal, tags, tag_groups)
+        sub = goal_events(goal_counted_frame(frame, goal, kind), goal, tags, tag_groups)
         booked = goal_amount(goal, sub, week, week_end, tz=tz)
         done = goal_amount(goal, sub, week, week_end, now=now, tz=tz)
         _, label = goal_status(goal, done, booked)

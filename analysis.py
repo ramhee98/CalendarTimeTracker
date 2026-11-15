@@ -42,6 +42,29 @@ def long_event_mask(df, max_hours=16):
     return is_all_day(df["start"], df["end"]) | (hours > max_hours)
 
 
+def on_wake_day(df, mask=None):
+    """Sleep counted on the day you woke up: every timed event (of `mask`)
+    starts at the midnight before its end at the earliest, with
+    `hours_factor` scaled so it still counts its full hours (times any factor
+    it had). Clipping it to days, weeks or months then puts the whole night
+    in the period of its wake-up day instead of splitting it at midnight."""
+    if df.empty:
+        return df
+    mask = pd.Series(True, index=df.index) if mask is None else mask
+    timed = mask & (df["end"] > df["start"]) & ~is_all_day(df["start"], df["end"])
+    if not timed.any():
+        return df
+    out = df.copy()
+    start, end = out.loc[timed, "start"], out.loc[timed, "end"]
+    wake_midnight = (end - pd.Timedelta(microseconds=1)).dt.normalize()
+    moved = start.where(start >= wake_midnight, wake_midnight)
+    if "hours_factor" not in out:
+        out["hours_factor"] = 1.0
+    out.loc[timed, "hours_factor"] = out.loc[timed, "hours_factor"].fillna(1.0) * ((end - start) / (end - moved))
+    out.loc[timed, "start"] = moved
+    return out
+
+
 def awake_factors(df, night_hours=8.0, sleep=()):
     """Share of each event's time spent awake, to count long events (trips,
     all-day events) by waking hours. Only nights the event spans count:
@@ -1176,7 +1199,9 @@ def expected_sleep(pairs, lo, hi, now, tz, wake_times=None, plan=None, mode="usu
 
     Every night after the last recorded sleep that ended before `now` gets
     an estimate, counted in full: sleep trackers add a night only after
-    waking, so last night may still be missing. `mode` (SLEEP_ESTIMATES):
+    waking, so last night may still be missing. A night counts in [lo, hi)
+    if its wake-up time is in it, so it's never split at midnight (like
+    recorded sleep with `on_wake_day`). `mode` (SLEEP_ESTIMATES):
     "usual" = usual bedtime and wake-up time (`usual_sleep`); "plan" = the
     planned night from `plan` ({night: (bed, wake)}, see `sleep_plan`) where
     there is one, else usual; "plan_wake" = usual bedtime, planned wake-up
@@ -1208,8 +1233,8 @@ def expected_sleep(pairs, lo, hi, now, tz, wake_times=None, plan=None, mode="usu
                     night = (bed, wake, "usual")
         if night is not None:
             bed, wake, source = night
-            if (last_end is None or bed >= last_end) and wake > lo and bed < hi:
-                parts = [(max(bed, lo), min(wake, hi))]
+            if (last_end is None or bed >= last_end) and lo <= wake - pd.Timedelta(microseconds=1) < hi:
+                parts = [(bed, wake)]
                 for rs, re_ in recorded:
                     parts = [p for s, e in parts for p in _subtract([(s, e)], rs, re_)]
                 part_hours = sum((e - s).total_seconds() for s, e in parts) / 3600
