@@ -8,7 +8,6 @@ import os
 import shutil
 import calendar
 import json
-import tzlocal
 import threading
 import time
 from utils import (
@@ -16,7 +15,7 @@ from utils import (
     default_view_index,
     load_calendar_urls, load_all_events, load_all_events_from_cache, parse_ics_from_url,
     select_month_range, fetch_and_parse_ics, render_accuracy_settings, apply_accuracy_settings,
-    build_events_df, long_events_mask, run_parallel, load_goals, render_goal_progress, evaluate_goals, render_health_banner, load_tag_occurrences, load_tag_groups,
+    build_events_df, events_frame, long_events_mask, run_parallel, load_goals, render_goal_progress, evaluate_goals, render_health_banner, load_tag_occurrences, load_tag_groups,
 )
 from analysis import (
     clip_to_range, find_overlaps, union_hours, is_tag_goal,
@@ -156,32 +155,9 @@ def start_background_refresher_once():
 start_background_refresher_once()
 
 
-def normalize_time(df, start_col="start", end_col="end", tz="local"):
-    df[start_col] = pd.to_datetime(df[start_col], errors="coerce")
-    df[end_col] = pd.to_datetime(df[end_col], errors="coerce")
-
-    if tz == "utc":
-        df[start_col] = df[start_col].dt.tz_convert("UTC")
-        df[end_col] = df[end_col].dt.tz_convert("UTC")
-    elif tz == "naive":
-        df[start_col] = df[start_col].dt.tz_localize(None)
-        df[end_col] = df[end_col].dt.tz_localize(None)
-    elif tz == "local":
-        local_tz = tzlocal.get_localzone()
-        df[start_col] = df[start_col].dt.tz_convert(local_tz)
-        df[end_col] = df[end_col].dt.tz_convert(local_tz)
-    return df
-
-def normalize_calendar_name(name):
-    if name.startswith("[Imported] "):
-        return name.replace("[Imported] ", "").strip()
-    return name.strip()
-
-def preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range):
-    df = pd.DataFrame(all_events)
-    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
-    # Normalize time BEFORE filtering
-    df = normalize_time(df, tz="local")  # or tz="utc"
+def preprocess_dataframe(all_events, select_month_range):
+    # Local times and display calendar names, BEFORE filtering
+    df = events_frame(all_events)
     # Filter by date range
     start_date, end_date = select_month_range(df)
     # Update day/week/month distribution calculations to handle multi-day events properly
@@ -730,7 +706,7 @@ if all_events:
 
     # Process data with progress indicator
     with st.spinner("Processing and filtering calendar data..."):
-        df, start_date, end_date = preprocess_dataframe(all_events, normalize_calendar_name, normalize_time, select_month_range)
+        df, start_date, end_date = preprocess_dataframe(all_events, select_month_range)
         df["group"] = df[group_mode]
         df_all_events = df
         df = apply_accuracy_settings(df, accuracy)

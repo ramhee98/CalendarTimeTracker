@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import tzlocal
 import calendar as cal_module
 import threading
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from calendar_store import (
     update_event_store, load_cached_events, read_events_csv, get_cache_file_path, expand_calendar_events,
@@ -356,6 +357,49 @@ def clear_event_caches():
     cached data such as the GitHub version check."""
     parse_ics_from_url.clear()
     _cached_events_frame.clear()
+    with _FRAME_MEMO_LOCK:
+        _FRAME_MEMO.clear()
+
+
+class CachedEvents(list):
+    """Event records read from the CSV cache. `cache_key` names exactly the
+    data they came from (kind, calendar config, cache file signatures), so
+    frames derived from them can be reused across reruns."""
+    cache_key = None
+
+
+# Frames derived from cached events (local times, data-accuracy rules),
+# rebuilt otherwise on every rerun. Keys hold everything the frame depends
+# on; callers get a copy, so they may change it.
+_FRAME_MEMO = OrderedDict()
+_FRAME_MEMO_LOCK = threading.Lock()
+_FRAME_MEMO_SIZE = 16
+
+
+def _memo_frame(key, build):
+    with _FRAME_MEMO_LOCK:
+        df = _FRAME_MEMO.get(key)
+        if df is not None:
+            _FRAME_MEMO.move_to_end(key)
+    if df is None:
+        df = build()
+        with _FRAME_MEMO_LOCK:
+            _FRAME_MEMO[key] = df
+            while len(_FRAME_MEMO) > _FRAME_MEMO_SIZE:
+                _FRAME_MEMO.popitem(last=False)
+    return df.copy()
+
+
+def _cache_state():
+    """Calendar config, signatures of every cache file and the local
+    timezone: what frames built from the cache depend on."""
+    calendar_data, _ = load_calendar_urls()
+    calendar_data = calendar_data or []
+    return (
+        json.dumps(calendar_data, sort_keys=True),
+        tuple(_file_signature(get_cache_file_path(c["url"])) for c in calendar_data),
+        str(tzlocal.get_localzone()),
+    )
 
 
 def load_events_frame(kind="time", keep_plans=False):
@@ -373,10 +417,18 @@ def load_all_events_from_cache(kind="time", keep_plans=False):
     """Load events of `kind` ("time" or "tags") from the local CSV cache only
     (instant, no network requests)."""
     try:
+        calendar_data, _ = load_calendar_urls()
         df, source_type = load_events_frame(kind, keep_plans)
         if source_type is None:
             return None, None
-        return (df.to_dict("records") if not df.empty else None), source_type
+        if df.empty:
+            return None, source_type
+        events = CachedEvents(df.to_dict("records"))
+        events.cache_key = (
+            kind, keep_plans, json.dumps(calendar_data, sort_keys=True),
+            tuple(_file_signature(get_cache_file_path(c["url"])) for c in calendar_data if c["type"] == kind),
+        )
+        return events, source_type
     except Exception as e:
         st.error(f"An error occurred while loading cached events: {e}")
         return None, None
@@ -821,13 +873,31 @@ def load_events_for_page(page_key, kind="time", stop_if_empty=True):
     return all_events, source_type
 
 
+def events_frame(all_events):
+    """DataFrame of event records with display calendar names and local
+    times. Reused across reruns for events from the cache."""
+    def build():
+        df = pd.DataFrame(all_events)
+        df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
+        return normalize_time(df, tz="local")
+
+    source = getattr(all_events, "cache_key", None)
+    if source is None:
+        return build()
+    return _memo_frame(("events_frame", source, str(tzlocal.get_localzone())), build)
+
+
 def build_events_df(all_events, accuracy=None, wake_day=True):
     """Events DataFrame with local times, display calendar names and the
-    data-accuracy rule applied (see `apply_accuracy_settings`)."""
-    df = pd.DataFrame(all_events)
-    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
-    df = normalize_time(df, tz="local")
-    return apply_accuracy_settings(df, accuracy, wake_day=wake_day)
+    data-accuracy rule applied (see `apply_accuracy_settings`). Reused
+    across reruns for events from the cache while the cache files,
+    calendar config and settings stay the same."""
+    source = getattr(all_events, "cache_key", None)
+    if source is None:
+        return apply_accuracy_settings(events_frame(all_events), accuracy, wake_day=wake_day)
+    settings = accuracy or load_app_settings()  # as apply_accuracy_settings does
+    key = ("events_df", source, _cache_state(), json.dumps(settings, sort_keys=True, default=str), wake_day)
+    return _memo_frame(key, lambda: apply_accuracy_settings(events_frame(all_events), settings, wake_day=wake_day))
 
 
 def default_view_index():
@@ -1205,12 +1275,16 @@ def save_tag_groups(groups):
 
 def load_raw_events(kind="time"):
     """Events of `kind` from the cache with local times and display calendar
-    names, without the data-accuracy rules (long and free events kept)."""
-    df, _ = load_events_frame(kind, keep_plans=True)
-    if df.empty:
-        return pd.DataFrame(columns=["calendar", "event_name", "start", "end", "free"])
-    df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
-    return normalize_time(df, tz="local")
+    names, without the data-accuracy rules (long and free events kept).
+    Reused across reruns while the cache files stay the same."""
+    def build():
+        df, _ = load_events_frame(kind, keep_plans=True)
+        if df.empty:
+            return pd.DataFrame(columns=["calendar", "event_name", "start", "end", "free"])
+        df["calendar"] = df["calendar_name"].apply(normalize_calendar_name)
+        return normalize_time(df, tz="local")
+
+    return _memo_frame(("raw_events", kind, _cache_state()), build)
 
 
 def slot_block_rule(settings):
