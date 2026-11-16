@@ -178,11 +178,47 @@ def _install_fast_content_line_parser():
     ContentLine.parse = classmethod(parse)
 
 
+# ics turns compact iCal dates ("20250127T090000") into Arrow objects with
+# arrow.get(string, "YYYYMMDDTHHmmss"), which builds a new arrow parser and
+# its regexes for every date: most of the remaining parse time. For plain
+# ASCII-digit dates this computes the same Arrow (UTC, as arrow does for a
+# format without timezone) directly. Anything else (dashes, hour 24, invalid
+# dates, other digits) goes to the original, so results and errors match.
+_COMPACT_DATE = re.compile(r"([0-9]{4})([0-9]{2})(?:([0-9]{2})(?:T([0-9]{2})(?:([0-9]{2})([0-9]{2})?)?)?)?")
+
+
+def _install_fast_date_parser():
+    import ics.utils
+    from arrow import Arrow
+
+    if getattr(ics.utils.arrow_get, "_fast", False):
+        return
+    original = ics.utils.arrow_get
+    utc = dttz.tzutc()
+
+    def arrow_get(string):
+        if "/" not in string and "-" not in string:
+            m = _COMPACT_DATE.fullmatch(string.rstrip("Z"))
+            if m is not None:
+                parts = [int(p) if p is not None else None for p in m.groups()]
+                year, month, day, hour, minute, second = parts
+                if hour is None or hour < 24:
+                    try:
+                        return Arrow(year, month, day or 1, hour or 0, minute or 0, second or 0, 0, utc)
+                    except ValueError:
+                        pass  # invalid date: let arrow raise its own error
+        return original(string)
+
+    arrow_get._fast = True
+    ics.utils.arrow_get = arrow_get
+
+
 def parse_ics(content):
     """``ics.Calendar`` of an .ics text, safe to call from several threads."""
     from ics import Calendar
     with _ICS_LOCK:
         _install_fast_content_line_parser()
+        _install_fast_date_parser()
         return Calendar(content)
 
 
