@@ -136,11 +136,53 @@ def recurrence_id_key(event):
 # download in parallel.
 _ICS_LOCK = threading.RLock()
 
+# ics 0.7.2 parses every content line with a generic TatSu grammar, which
+# takes ~95% of the parse time (seconds per MB). The grammar
+# (ics/grammar/contentline.ebnf) is a regular language, so one compiled regex
+# gives the same name/params/value. Lines it doesn't accept go to the
+# original parser, so malformed feeds raise the same errors as before.
+_QSAFE = r'"[^\x00-\x08\x0A-\x1F"\x7F]*"'
+_SAFE = r'[^\x00-\x08\x0A-\x1F",:;\x7F]*'
+_PARAM_VALUE = f"(?:{_QSAFE}|{_SAFE})"
+_PARAM_VALUES = f"{_PARAM_VALUE}(?:,{_PARAM_VALUE})*"
+_CONTENT_LINE = re.compile(
+    f"([a-zA-Z0-9-]+)((?:;[a-zA-Z0-9-]+={_PARAM_VALUES})*):([^\\x00-\\x08\\x0A-\\x1F\\x7F]*)"
+)
+_PARAM = re.compile(f";([a-zA-Z0-9-]+)=({_PARAM_VALUES})")
+_VALUE = re.compile(f"({_QSAFE}|{_SAFE})(,|$)")
+
+
+def _install_fast_content_line_parser():
+    from ics.grammar.parse import ContentLine
+
+    if getattr(ContentLine.parse, "_fast", False):
+        return
+    original = ContentLine.parse.__func__
+
+    def parse(cls, line, nr=-1):
+        m = None if ("\n" in line or "\r" in line) else _CONTENT_LINE.fullmatch(line)
+        if m is None:
+            return original(cls, line, nr)
+        params = {}
+        for pm in _PARAM.finditer(m.group(2)):
+            values = []
+            for vm in _VALUE.finditer(pm.group(2)):
+                v = vm.group(1)
+                values.append(v[1:-1] if v.startswith('"') else v)
+                if not vm.group(2):
+                    break
+            params[pm.group(1)] = values  # a repeated param name: last one wins, as in ics
+        return cls(m.group(1), params, m.group(3))
+
+    parse._fast = True
+    ContentLine.parse = classmethod(parse)
+
 
 def parse_ics(content):
     """``ics.Calendar`` of an .ics text, safe to call from several threads."""
     from ics import Calendar
     with _ICS_LOCK:
+        _install_fast_content_line_parser()
         return Calendar(content)
 
 
