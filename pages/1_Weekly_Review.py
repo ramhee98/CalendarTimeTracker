@@ -6,11 +6,12 @@ from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
     select_group_mode, load_goals, load_tag_occurrences, load_tag_groups,
     load_app_settings, goal_estimate_kind, goal_frame, goal_estimate, goal_counted_frame, long_events_mask,
+    sort_key_col, sortable_table,
 )
 from analysis import (
     clip_between, local_midnight, period_start, period_label, typical_week,
     hours_by_period, goal_events, goal_status, goal_target_text,
-    goal_amount, format_goal_amount, is_tag_goal, estimated_goal_status,
+    goal_amount, format_goal_amount, is_tag_goal, estimated_goal_status, goal_status_sort, goal_target_value,
 )
 
 st.set_page_config(page_title="Weekly Review", layout="wide")
@@ -112,6 +113,11 @@ compare["Δ %"] = [
     f"{d / a * 100:+.0f}%" if a > 0 else ("new" if t > 0 else "—")
     for d, a, t in zip(compare["Δ h"], compare[avg_col], compare["This week"])
 ]
+# "new" sorts as the biggest increase.
+compare[sort_key_col("Δ %")] = [
+    d / a * 100 if a > 0 else (float("inf") if t > 0 else None)
+    for d, a, t in zip(compare["Δ h"], compare[avg_col], compare["This week"])
+]
 compare = compare[(compare["This week"] > 0) | (compare[avg_col] > 0)]
 compare = compare.sort_values("This week", ascending=False)
 
@@ -134,7 +140,7 @@ st.altair_chart(
 shown = compare.copy()
 for col in ["This week", avg_col, "Δ h"]:
     shown[col] = shown[col].round(1)
-st.dataframe(shown, use_container_width=True, hide_index=True)
+st.dataframe(sortable_table(shown), use_container_width=True, hide_index=True)
 
 # --- Biggest changes ---
 changes = compare[compare["Δ h"].abs() >= 1].sort_values("Δ h", key=abs, ascending=False).head(4)
@@ -168,18 +174,22 @@ if weekly_goals:
         sub = goal_events(goal_counted_frame(frame, goal, kind), goal, tags, tag_groups)
         booked = goal_amount(goal, sub, week, week_end, tz=tz)
         done = goal_amount(goal, sub, week, week_end, now=now, tz=tz)
-        _, label = goal_status(goal, done, booked)
+        status, label = goal_status(goal, done, booked)
         amount = format_goal_amount(goal, booked)
+        amount_value = booked
         est = goal_estimate(frame, goal, kind, week, week_end, now, settings) if kind else None
         if est is not None and est["hours"] > 0:
-            _, label = estimated_goal_status(goal, done, booked + est["hours"])
+            status, label = estimated_goal_status(goal, done, booked + est["hours"])
             amount = f"~{format_goal_amount(goal, booked + est['hours'])} expected"
+            amount_value = booked + est["hours"]
             estimate_notes.append(est["note"])
         measure = ", actual sleep" if kind == "sleep" and settings.get("goals_sleep_measure") == "asleep" else ""
         rows.append({"Goal": f"{goal['name']} ({goal['type'].replace('_', ' ')}{measure})", "Target": goal_target_text(goal),
-                     "Amount": amount, "Status": label})
+                     sort_key_col("Target"): goal_target_value(goal),
+                     "Amount": amount, sort_key_col("Amount"): amount_value,
+                     "Status": label, sort_key_col("Status"): goal_status_sort(goal, status, amount_value)})
         goal_lines.append(f"{goal['name']} {goal_target_text(goal)}: {amount} — {label}")
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(sortable_table(pd.DataFrame(rows)), use_container_width=True, hide_index=True)
     for note in estimate_notes:
         if note:
             st.caption(note)

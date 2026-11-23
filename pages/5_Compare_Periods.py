@@ -1,5 +1,5 @@
 import streamlit as st
-from utils import clear_event_caches, default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, render_accuracy_settings, apply_accuracy_settings, render_health_banner
+from utils import clear_event_caches, default_view_index, load_all_events, load_all_events_from_cache, normalize_calendar_name, normalize_time, render_accuracy_settings, apply_accuracy_settings, render_health_banner, sort_key_col, sortable_table
 from analysis import clip_to_range
 import pandas as pd
 import altair as alt
@@ -226,10 +226,11 @@ for g in all_groups:
         "Period B (h)": round(hours_b, 1),
         "Δ Hours": round(diff, 1),
         "Δ %": f"{pct:+.0f}%" if pct is not None else "—",
+        sort_key_col("Δ %"): pct,
     })
 
 delta_df = pd.DataFrame(rows)
-st.dataframe(delta_df, use_container_width=True, hide_index=True)
+st.dataframe(sortable_table(delta_df), use_container_width=True, hide_index=True)
 
 # --- Per-day trend within each period ---
 with st.expander("📈 Daily breakdown within each period"):

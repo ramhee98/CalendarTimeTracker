@@ -400,6 +400,23 @@ def goal_target_text(goal):
     return f"≤ {mx:g}{unit}"
 
 
+def goal_target_value(goal):
+    """The goal's target as a number (Min, else Max), for sorting tables."""
+    return goal.get("min") if goal.get("min") is not None else goal.get("max")
+
+
+GOAL_STATUS_ORDER = ["over", "at_risk", "behind", "on_track", "met"]
+
+
+def goal_status_sort(goal, status, amount):
+    """Sort value for a goal status: worst status first, and within "behind"
+    the biggest shortfall first. `amount` is what the status was computed from
+    (booked or expected)."""
+    rank = GOAL_STATUS_ORDER.index(status) if status in GOAL_STATUS_ORDER else len(GOAL_STATUS_ORDER)
+    short = max(goal["min"] - amount, 0) if status == "behind" and goal.get("min") is not None else 0
+    return rank * 1_000_000 - short
+
+
 def goal_status(goal, done, booked):
     """Status of a goal for a period: (key, label).
 

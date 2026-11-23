@@ -15,7 +15,7 @@ from utils import (
     clear_event_caches,
     CALENDARS_JSON, DEFAULT_APP_SETTINGS, LONG_EVENT_MODES, ensure_ics_content, fetch_and_parse_ics, load_all_events_from_cache, load_app_settings, run_parallel,
     load_calendar_urls, load_tag_groups, normalize_calendar_name, normalize_time, read_calendars_config,
-    save_app_settings, slot_blocker, write_calendars_config, write_file_with_backup,
+    save_app_settings, slot_blocker, write_calendars_config, write_file_with_backup, sort_key_col, sortable_table,
 )
 
 st.set_page_config(page_title="Settings", layout="wide")
@@ -72,12 +72,16 @@ def looks_like_tags(path, threshold=0.9, min_events=5):
 
 
 def cache_info(path):
-    """Events, first/last start and last update of one cache CSV."""
-    info = {"Events": 0, "First event": "—", "Last event": "—", "Updated": "never", "Size (KB)": 0.0}
+    """Events, first/last start and last update of one cache CSV, with sort
+    values for the date columns (see sortable_table)."""
+    info = {"Events": 0, "First event": "—", sort_key_col("First event"): None,
+            "Last event": "—", sort_key_col("Last event"): None,
+            "Updated": "never", sort_key_col("Updated"): None, "Size (KB)": 0.0}
     if not os.path.exists(path):
         return info
     mtime = datetime.fromtimestamp(os.path.getmtime(path))
     info["Updated"] = f"{mtime:%Y-%m-%d %H:%M} ({format_age(mtime)})"
+    info[sort_key_col("Updated")] = mtime
     info["Size (KB)"] = round(os.path.getsize(path) / 1024, 1)
     try:
         df = pd.read_csv(path, usecols=["start"])
@@ -87,7 +91,9 @@ def cache_info(path):
     info["Events"] = len(df)
     if not starts.empty:
         info["First event"] = f"{starts.min():%Y-%m-%d}"
+        info[sort_key_col("First event")] = starts.min()
         info["Last event"] = f"{starts.max():%Y-%m-%d}"
+        info[sort_key_col("Last event")] = starts.max()
     return info
 
 
@@ -811,16 +817,19 @@ def render_slots_tab():
                 a, b = lo + pd.Timedelta(days=i), lo + pd.Timedelta(days=i + 1)
                 blocked = blocked_for(a, b)
                 free = 24 - sum((y - x).total_seconds() for x, y in blocked) / 3600
-                preview.append({"Day": a.strftime("%a %d.%m."), "Free (h)": round(free, 1),
+                preview.append({"Day": a.strftime("%a %d.%m."), sort_key_col("Day"): a,
+                                "Free (h)": round(free, 1),
                                 "Blocked": ", ".join(f"{x:%H:%M}–{y:%H:%M}" for x, y in blocked) or "—"})
-            st.dataframe(pd.DataFrame(preview), hide_index=True, use_container_width=True)
+            st.dataframe(sortable_table(pd.DataFrame(preview)), hide_index=True, use_container_width=True)
             if sleep_mode != "none":
                 nights = nights_for(lo - pd.Timedelta(days=3), lo + pd.Timedelta(days=7))
                 if nights:
-                    st.dataframe(pd.DataFrame([{
-                        "Night of": f"{n:%a %d.%m.}", "Bed": f"{bed:%a %H:%M}", "Wake": f"{wake:%a %H:%M}",
+                    st.dataframe(sortable_table(pd.DataFrame([{
+                        "Night of": f"{n:%a %d.%m.}", sort_key_col("Night of"): n,
+                        "Bed": f"{bed:%a %H:%M}", sort_key_col("Bed"): bed,
+                        "Wake": f"{wake:%a %H:%M}", sort_key_col("Wake"): wake,
                         "From": {"event": "event", "plan": "bedtime plan"}.get(src, "usual times"),
-                    } for n, bed, wake, src in nights]), hide_index=True, use_container_width=True)
+                    } for n, bed, wake, src in nights])), hide_index=True, use_container_width=True)
                 else:
                     st.info("No sleep found: check the calendar or the event names, and sync.")
             st.caption("Blocked times include the buffer around events. Free hours count every gap, also "
@@ -921,7 +930,7 @@ with tab_cache:
         if c.get("type") != "tags" and looks_like_tags(path):
             tag_hints.append(c["custom_name"])
     if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(sortable_table(pd.DataFrame(rows)), use_container_width=True, hide_index=True)
         for name in tag_hints:
             st.info(
                 f"**{name}** looks like a tag calendar: almost all of its events are all-day or have no "
@@ -999,7 +1008,9 @@ with tab_cache:
             "Re-adding the same URL would reuse its file, including events older than 30 days."
         )
         select_all = st.checkbox("Select all", key="orphans_select_all")
+        # The editor can't show text over sort values; the ISO date text sorts fine as it is.
         orphan_df = pd.DataFrame(orphan_rows)
+        orphan_df = orphan_df.drop(columns=[c for c in orphan_df.columns if c.startswith(sort_key_col(""))])
         orphan_df.insert(0, "Delete", select_all)
         edited_orphans = st.data_editor(
             orphan_df,

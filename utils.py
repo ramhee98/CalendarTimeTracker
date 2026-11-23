@@ -1452,3 +1452,60 @@ def render_health_banner():
         st.warning(f"🩺 {len(failing)} calendar(s) can't be fetched: {names}. Their cached events are still "
                    "used. Details on the Calendar Health page.")
 
+
+
+SORT_KEY_PREFIX = "__key__"
+
+
+def sort_key_col(column):
+    """Name of the hidden column holding the sort value for `column`, see sortable_table."""
+    return SORT_KEY_PREFIX + column
+
+
+def _plain_cell_text(v):
+    if v is None or (not isinstance(v, (list, tuple, set, dict)) and pd.isna(v)):
+        return ""
+    if isinstance(v, float):
+        return f"{v:.4f}".rstrip("0").rstrip(".")
+    return str(v)
+
+
+def sortable_table(df):
+    """Make text columns like '10 days ago' or '+12%' sort by their number.
+
+    Every column `C` with a companion column `sort_key_col(C)` (numbers, timestamps
+    or None) gets the companion's values as data, so clicking the header in
+    st.dataframe sorts by them, while each cell still shows its original text.
+    The companion columns are dropped. Returns a pandas Styler (or df unchanged
+    when it has no companion columns). Meant for small tables: the text is set
+    per cell. The Styler's text replaces column_config number formats, so don't
+    rely on NumberColumn(format=...) for other columns of the same table.
+    """
+    key_cols = [c for c in df.columns if isinstance(c, str) and c.startswith(SORT_KEY_PREFIX)]
+    if not key_cols:
+        return df
+    df = df.reset_index(drop=True)
+    raw = df.drop(columns=key_cols)
+    texts = {}
+    for key_col in key_cols:
+        col = key_col[len(SORT_KEY_PREFIX):]
+        keys = pd.Series(df[key_col].tolist(), dtype=object)
+        present = keys.dropna()
+        if len(present) and present.map(lambda v: isinstance(v, (datetime, date))).all():
+            keys = pd.to_datetime(keys, utc=any(getattr(v, "tzinfo", None) for v in present))
+        else:
+            keys = pd.to_numeric(keys, errors="coerce").astype(float)
+        texts[col] = df[col].tolist()
+        raw[col] = keys.values
+    styler = raw.style
+    # Streamlit shows the Styler's text for every cell (and skips column_config
+    # number formats), so plain columns get a neutral format instead of pandas'
+    # six decimals.
+    plain = [c for c in raw.columns if c not in texts]
+    if plain:
+        styler.format(_plain_cell_text, subset=plain)
+    for col, col_texts in texts.items():
+        for i, text in enumerate(col_texts):
+            shown = "" if text is None or (isinstance(text, float) and pd.isna(text)) else str(text)
+            styler.format(lambda _v, t=shown: t, subset=pd.IndexSlice[[i], [col]])
+    return styler

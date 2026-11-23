@@ -5,9 +5,10 @@ from utils import (
     load_events_for_page, build_events_df, render_accuracy_settings,
     load_goals, save_goals, render_goal_progress, render_next_goal_progress, goal_type_label, GOAL_TYPE_LABELS,
     load_tag_occurrences, load_tag_groups, load_app_settings, slot_blocker, evaluate_goals, goal_estimate_kind,
+    sort_key_col, sortable_table,
 )
 from analysis import (
-    PERIODS, format_goal_amount, goal_target_text, is_tag_goal, period_label, slots_to_ics, suggest_goal_slots,
+    PERIODS, format_goal_amount, goal_status_sort, goal_target_text, goal_target_value, is_tag_goal, period_label, slots_to_ics, suggest_goal_slots,
 )
 
 st.set_page_config(page_title="Goals", layout="wide")
@@ -142,12 +143,16 @@ if planning:
     overview = pd.DataFrame([{
         "Goal": target_label(g["type"], g["name"]),
         "Target": f"{goal_target_text(g)} / {g['period']}",
+        sort_key_col("Target"): goal_target_value(g),
         "Period": period_label(g["period"], r["next"]["period_start"]),
         "Booked": (f"~{format_goal_amount(g, r['next']['expected'])} expected" if "expected" in r["next"]
                    else format_goal_amount(g, r["next"]["booked"])),
+        sort_key_col("Booked"): r["next"].get("expected", r["next"]["booked"]),
         "Status": r["next"]["status_label"],
+        sort_key_col("Status"): goal_status_sort(g, r["next"]["status"],
+                                                 r["next"].get("expected", r["next"]["booked"])),
     } for g, r in results])
-    st.dataframe(overview, use_container_width=True, hide_index=True)
+    st.dataframe(sortable_table(overview), use_container_width=True, hide_index=True)
     st.caption("Booked = events already in your calendars for the next period. Future calendars are usually "
                "incomplete, so this is what's booked so far, not a forecast. Sleep and Oura activity goals add "
                "an estimate from the last 4 weeks for every night or day.")
@@ -162,14 +167,20 @@ else:
     overview = pd.DataFrame([{
         "Goal": target_label(g["type"], g["name"]),
         "Target": f"{goal_target_text(g)} / {g['period']}",
+        sort_key_col("Target"): goal_target_value(g),
         "Done": format_goal_amount(g, r["done"]),
+        sort_key_col("Done"): r["done"],
         "Booked": (f"~{format_goal_amount(g, r['expected'])} expected" if "expected" in r
                    else format_goal_amount(g, r["booked"])),
+        sort_key_col("Booked"): r.get("expected", r["booked"]),
         "Status": r["status_label"],
+        sort_key_col("Status"): goal_status_sort(g, r["status"], r.get("expected", r["booked"])),
         "Streak": f"{r['streak']} {g['period']}{'s' if r['streak'] != 1 else ''}",
+        sort_key_col("Streak"): r["streak"],
         "Hit rate": f"{r['met_count']}/{r['history_count']}" if r["history_count"] else "—",
+        sort_key_col("Hit rate"): r["met_count"] / r["history_count"] if r["history_count"] else None,
     } for g, r in results])
-    st.dataframe(overview, use_container_width=True, hide_index=True)
+    st.dataframe(sortable_table(overview), use_container_width=True, hide_index=True)
     st.caption("Done = hours (or tags) already passed this period, Booked = done plus events still scheduled; "
                "for sleep and Oura activity goals, plus an estimate from the last 4 weeks of what isn't recorded "
                "yet. Streak and hit rate count complete periods only. Tags are read from the local cache; "
@@ -213,12 +224,14 @@ else:
                     f"({p['booked']:.1f}h of {goal_target_text(goal)} booked "
                     f"{'for ' + period_label(goal['period'], p['period_start']) if plan == 'next' else 'so far'})")
         if p["slots"]:
-            st.dataframe(pd.DataFrame([{
+            st.dataframe(sortable_table(pd.DataFrame([{
                 "Day": f"{s['start']:%a %d.%m.}",
+                sort_key_col("Day"): s["start"],
                 "Time": f"{s['start']:%H:%M}–{s['end']:%H:%M}",
                 "Length": f"{s['minutes'] / 60:g}h",
+                sort_key_col("Length"): s["minutes"],
                 "Why": s["reason"],
-            } for s in p["slots"]]), hide_index=True, use_container_width=True)
+            } for s in p["slots"]])), hide_index=True, use_container_width=True)
             items = [(name, s) for s in p["slots"]]
             all_items += items
             st.download_button(f"📥 Add to calendar (.ics) · {name}", slots_to_ics(items, now).encode("utf-8"),

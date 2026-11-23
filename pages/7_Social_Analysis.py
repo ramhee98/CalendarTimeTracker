@@ -9,7 +9,7 @@ import requests
 import calendar
 from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response, is_free_event, parse_ics
 from analysis import KEEP_IN_TOUCH_ORDER, keep_in_touch_status, on_time_counts, seen_gaps, usual_gap_days
-from utils import clear_event_caches, NOT_TIME_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, count_awake_hours, load_app_settings, render_health_banner, run_parallel
+from utils import clear_event_caches, NOT_TIME_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, count_awake_hours, load_app_settings, render_health_banner, run_parallel, sort_key_col, sortable_table
 from calendar_health import FeedError, check_ics_text, feed_stats, fetch_feed, record_check, record_failure
 
 st.set_page_config(page_title="Social Time Analysis", layout="wide")
@@ -325,6 +325,12 @@ def format_days_ago(days, hours=None):
         return "yesterday"
     return f"{days} days ago"
 
+def span_hours(days, hours=None):
+    """Sort value in hours for format_days_ago / format_days_until text."""
+    if days is None:
+        return None
+    return hours if hours is not None else days * 24
+
 def format_days_until(days, hours=None):
     """Human-readable 'in x days' for a non-negative day count; for today,
     'in xh' when hours are given."""
@@ -566,11 +572,18 @@ def render_keep_in_touch(df, known_people, exclude_patterns, ignore_partial_name
             "_order": (KEEP_IN_TOUCH_ORDER.index(key), due_in if due_in is not None else 0),
             "Person": get_display_name(entry).title(),
             "Target": f"every {every} day{'s' if every != 1 else ''}",
+            sort_key_col("Target"): every,
             "Last seen": format_days_ago(days_ago, hours_ago) if last_dt is not None else "never",
+            sort_key_col("Last seen"): span_hours(days_ago, hours_ago) if last_dt is not None else None,
             "Next": next_text or "—",
+            sort_key_col("Next"): span_hours(days_until, hours_until) if next_dt is not None else None,
             "Status": keep_in_touch_label(key, due_in, next_text),
+            sort_key_col("Status"): KEEP_IN_TOUCH_ORDER.index(key) * 100000 + (due_in if due_in is not None else 0),
             "On time 3 · 6 · 12 mo": " · ".join(f"{ok}/{n}" if n else "—" for ok, n in counts),
+            # Sorted by the longest window that has visits (12 months, else 6, else 3).
+            sort_key_col("On time 3 · 6 · 12 mo"): next((ok / n for ok, n in reversed(counts) if n), None),
             "Usually": f"every {usual} days" if usual else "—",
+            sort_key_col("Usually"): usual or None,
         })
 
     if rows:
@@ -579,13 +592,13 @@ def render_keep_in_touch(df, known_people, exclude_patterns, ignore_partial_name
         if overdue:
             more = f" and {len(overdue) - 8} more" if len(overdue) > 8 else ""
             st.warning(f"Overdue: {', '.join(overdue[:8])}{more}")
-        st.dataframe(table, use_container_width=True, hide_index=True, column_config={
-            "On time 3 · 6 · 12 mo": st.column_config.TextColumn(
+        st.dataframe(sortable_table(table), use_container_width=True, hide_index=True, column_config={
+            "On time 3 · 6 · 12 mo": st.column_config.Column(
                 "On time 3 · 6 · 12 mo",
                 help="Gaps between visits in the last 3, 6 and 12 months that stayed within the target, "
                                        "plus the current gap if it's already too long. Consecutive days count "
                                        "as one visit."),
-            "Usually": st.column_config.TextColumn(
+            "Usually": st.column_config.Column(
                 "Usually", help="Your median gap between visits so far"),
         })
         st.caption("Uses all loaded events of the selected calendars, not just the date range below. "
@@ -604,13 +617,14 @@ def render_keep_in_touch(df, known_people, exclude_patterns, ignore_partial_name
         editor_df = pd.DataFrame([{
             "Person": person_key(e),
             "Every (days)": draft.get(person_key(e)),
-            "Usually": f"every {info[e]['usual']} days" if info[e]["usual"] else "—",
-        } for e in people]).astype({"Every (days)": "float"})
+            "Usually": info[e]["usual"] or None,
+        } for e in people]).astype({"Every (days)": "float", "Usually": "float"})
         edited = st.data_editor(
             editor_df, hide_index=True, use_container_width=True, key=f"kit_editor_{version}",
             disabled=["Person", "Usually"],
             column_config={"Every (days)": st.column_config.NumberColumn(
-                "Every (days)", min_value=1, max_value=365, step=1, format="%d")},
+                "Every (days)", min_value=1, max_value=365, step=1, format="%d"),
+                "Usually": st.column_config.NumberColumn("Usually", format="every %d days")},
         )
         c1, c2 = st.columns(2)
         if c1.button("💡 Suggest from history",
@@ -916,17 +930,25 @@ if all_events:
                     results.append({
                         "Person": display_name.title(),
                         "Last Seen": format_days_ago(days_ago, hours_ago),
+                        sort_key_col("Last Seen"): span_hours(days_ago, hours_ago),
                         "Next": format_days_until(days_until, hours_until),
+                        sort_key_col("Next"): span_hours(days_until, hours_until),
                         "Hours": round(hours, 1),
                         "Events": event_count,
                         "Avg Hours/Event": round(hours / event_count, 1) if event_count > 0 else 0,
                         "Median Hours/Event": round(median_duration, 1),
                         "Avg Between": format_gap(avg_between),
+                        sort_key_col("Avg Between"): avg_between,
                         "Min Between": format_gap(min_between),
+                        sort_key_col("Min Between"): min_between,
                         "Q1 Between": format_gap(q1_between),
+                        sort_key_col("Q1 Between"): q1_between,
                         "Median Between": format_gap(median_between),
+                        sort_key_col("Median Between"): median_between,
                         "Q3 Between": format_gap(q3_between),
+                        sort_key_col("Q3 Between"): q3_between,
                         "Max Between": format_gap(max_between),
+                        sort_key_col("Max Between"): max_between,
                     })
                 
                 results_df = pd.DataFrame(results)
@@ -936,16 +958,16 @@ if all_events:
                 
                 # Table
                 st.dataframe(
-                    results_df,
+                    sortable_table(results_df),
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        "Last Seen": st.column_config.TextColumn(
+                        "Last Seen": st.column_config.Column(
                             "Last Seen",
                             help="Time since the most recent past event in the selected range "
                                  "(in hours when it was today)",
                         ),
-                        "Next": st.column_config.TextColumn(
+                        "Next": st.column_config.Column(
                             "Next",
                             help="Time until the next scheduled event, any future date "
                                  "(in hours when it's today)",

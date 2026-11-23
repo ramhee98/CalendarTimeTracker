@@ -7,7 +7,7 @@ import tzlocal
 
 from calendar_health import ERROR_LABELS, MAX_CHECKS, clear_health, load_health
 from calendar_store import hash_url
-from utils import clear_event_caches, calendar_health_rows, fetch_and_parse_ics, load_app_settings, run_parallel
+from utils import clear_event_caches, calendar_health_rows, fetch_and_parse_ics, load_app_settings, run_parallel, sort_key_col, sortable_table
 
 st.set_page_config(page_title="Calendar Health", layout="wide")
 st.title("🩺 Calendar Health")
@@ -39,6 +39,11 @@ def ago(ts, now):
     if seconds < 172800:
         return f"{seconds / 3600:.0f} h ago"
     return f"{seconds / 86400:.0f} days ago"
+
+
+def seconds_ago(ts, now):
+    """Sort value for ago()."""
+    return None if ts is None else (now - ts).total_seconds()
 
 
 def local(ts):
@@ -99,7 +104,9 @@ for c, s in rows:
         "Calendar": c["custom_name"],
         "Type": c.get("type", "time"),
         "Last check": ago(s["last_check"], now),
+        sort_key_col("Last check"): seconds_ago(s["last_check"], now),
         "Last good fetch": ago(s["last_good"], now),
+        sort_key_col("Last good fetch"): seconds_ago(s["last_good"], now),
         "Uptime": round(s["uptime"] * 100) if s["uptime"] is not None else None,
         "Fetch time (s)": round(last["ms"] / 1000, 2) if last.get("ms") is not None else None,
         "Events": last.get("events") if last.get("ok") else None,
@@ -108,7 +115,7 @@ for c, s in rows:
 overview = pd.DataFrame(table)
 overview["Events"] = overview["Events"].astype("Int64")
 st.dataframe(
-    overview,
+    sortable_table(overview),
     hide_index=True,
     use_container_width=True,
     column_config={
@@ -171,9 +178,9 @@ if checks:
         "Time": recent["time"].dt.strftime("%Y-%m-%d %H:%M"),
         "Result": [("✅ OK" if ok else f"❌ {ERROR_LABELS.get(k, 'Error')}") for ok, k in zip(recent["ok"], recent["kind"])],
         "Via": recent["source"].map({"sync": "Sync", "background": "Daily sync", "check": "Health check"}),
-        "HTTP": recent["http_status"].map(lambda v: "—" if pd.isna(v) else int(v)),
+        "HTTP": recent["http_status"].astype("Int64"),
         "Seconds": recent["seconds"].round(2),
-        "Events": recent["events"].map(lambda v: "—" if pd.isna(v) else int(v)),
+        "Events": recent["events"].astype("Int64"),
         "Error": recent["error"].fillna(""),
     }), hide_index=True, use_container_width=True)
     st.caption(f"The last {MAX_CHECKS} checks per calendar are kept in `sync_health.json`.")

@@ -11,7 +11,7 @@ from analysis import (
 )
 from utils import (
     load_app_settings, load_calendar_urls, load_events_for_page, load_tag_groups, normalize_calendar_name, normalize_time,
-    save_tag_groups, select_month_range,
+    save_tag_groups, select_month_range, sort_key_col, sortable_table,
 )
 
 st.set_page_config(page_title="Tags", layout="wide")
@@ -242,8 +242,9 @@ shown = summary.copy()
 averages = settings.get("tags_summary_averages", list(TAG_AVERAGES))
 shown = shown.drop(columns=[col for key, col in TAG_AVERAGES.items() if key not in averages])
 shown["Last seen"] = [f"{d:%Y-%m-%d}" if d is not None and pd.notna(d) else "—" for d in shown["Last seen"]]
+last_seen_keys = [d if d is not None and pd.notna(d) else None for d in summary["Last seen"]]
 st.dataframe(
-    shown,
+    sortable_table(shown.assign(**{sort_key_col("Last seen"): last_seen_keys})),
     use_container_width=True,
     hide_index=True,
     column_config={
