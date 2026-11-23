@@ -303,6 +303,68 @@ def hours_by_period(df, period, first, last, group_col=None):
     return out
 
 
+# --- Keep in touch (people goals, Social Analysis) ---
+
+KEEP_IN_TOUCH_SOON = 0.75  # share of the target after which a person is "due soon"
+KEEP_IN_TOUCH_ORDER = ["overdue", "overdue_booked", "late", "due_soon", "never", "booked", "on_track"]
+
+
+def keep_in_touch_status(every_days, days_ago, days_until=None):
+    """Status of "see them at least every `every_days` days": (key, due_in)
+    with due_in = days until the target is due (negative = overdue).
+
+    `days_ago` = days since last seen (None = never), `days_until` = days
+    until the next booked meeting (None = nothing booked). Keys:
+    "overdue" (past due, nothing booked), "overdue_booked" (past due, a
+    meeting is booked), "late" (the next meeting is after the due date),
+    "due_soon" (at least KEEP_IN_TOUCH_SOON of the target passed, nothing
+    booked before the due date), "booked" (the next meeting is before the
+    due date), "on_track" and "never" (never seen, nothing booked)."""
+    if days_ago is None:
+        return ("booked" if days_until is not None else "never"), None
+    due_in = every_days - days_ago
+    booked = days_until is not None
+    if due_in < 0:
+        return ("overdue_booked" if booked else "overdue"), due_in
+    if booked and days_until <= due_in:
+        return "booked", due_in
+    if booked:
+        return "late", due_in
+    if days_ago >= KEEP_IN_TOUCH_SOON * every_days:
+        return "due_soon", due_in
+    return "on_track", due_in
+
+
+def seen_gaps(seen_dates):
+    """Gaps in days between visits: consecutive seen days (e.g. a trip)
+    are one visit, a gap runs from the last day of one visit to the first
+    day of the next. Returns [(gap_days, end_date)] in date order."""
+    days = sorted(set(seen_dates))
+    gaps = []
+    for a, b in zip(days, days[1:]):
+        if (b - a).days > 1:
+            gaps.append(((b - a).days, b))
+    return gaps
+
+
+def on_time_counts(seen_dates, every_days, today, since):
+    """(on time, total) of the gaps between visits that ended on or after
+    `since`, plus the current gap if it already exceeds the target (a miss
+    in progress). A gap is on time if it's at most `every_days` days."""
+    gaps = [g for g, end in seen_gaps(seen_dates) if end >= since]
+    on_time = sum(1 for g in gaps if g <= every_days)
+    total = len(gaps)
+    if seen_dates and (today - max(seen_dates)).days > every_days:
+        total += 1
+    return on_time, total
+
+
+def usual_gap_days(seen_dates):
+    """Median gap between visits in whole days (None without gaps)."""
+    gaps = [g for g, _ in seen_gaps(seen_dates)]
+    return int(round(float(pd.Series(gaps).median()))) if gaps else None
+
+
 # --- Goals ---
 #
 # Calendar and category goals count hours. Tag and tag group goals count how

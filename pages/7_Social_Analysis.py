@@ -8,6 +8,7 @@ import os
 import requests
 import calendar
 from calendar_store import load_cached_events, update_event_store, expand_calendar_events, decode_ics_response, is_free_event, parse_ics
+from analysis import KEEP_IN_TOUCH_ORDER, keep_in_touch_status, on_time_counts, seen_gaps, usual_gap_days
 from utils import clear_event_caches, NOT_TIME_UID_PREFIXES, select_month_range, normalize_time, ensure_ics_content, drop_free_events, count_awake_hours, load_app_settings, render_health_banner, run_parallel
 from calendar_health import FeedError, check_ics_text, feed_stats, fetch_feed, record_check, record_failure
 
@@ -27,7 +28,9 @@ def load_settings():
         "hide_from_discover": [],
         "selected_calendars": [],
         "ignore_partial_names": True,
-        "match_calendar_names": True
+        "match_calendar_names": True,
+        # Keep in touch: {primary name: {"every_days": N}}
+        "people_goals": {},
     }
     if not os.path.exists(SETTINGS_FILE):
         return default_settings
@@ -366,6 +369,62 @@ def format_event_when(evt):
         return first.strftime('%Y-%m-%d')
     return f"{first.strftime('%Y-%m-%d')} → {last.strftime('%Y-%m-%d')} ({(last - first).days + 1} days)"
 
+def last_seen_of(person_events, now):
+    """(last seen date, days ago, hours ago) from a person's events: the last
+    day covered by an event that has already started, capped at today (an
+    ongoing multi-day event = today). Hours ago only when seen today at a
+    set time (0 while that event is still running)."""
+    today = now.normalize()
+    past_days = [min(event_day_span(evt['date'], evt['end'])[1], today.date())
+                 for evt in person_events if evt['date'] <= now]
+    last_seen_dt = max(past_days) if past_days else None
+    days_ago = (today.date() - last_seen_dt).days if last_seen_dt is not None else None
+    hours_ago = None
+    if days_ago == 0:
+        ends = [min(evt['end'], now) for evt in person_events
+                if evt['date'] <= now and not is_all_day_event(evt['date'], evt['end'])]
+        last_end = max(ends) if ends else None
+        if last_end is not None and last_end.date() == today.date():
+            hours_ago = (now - last_end).total_seconds() / 3600
+    return last_seen_dt, days_ago, hours_ago
+
+
+def next_of(upcoming, now):
+    """(next start, days until, hours until) of the earliest upcoming event;
+    hours only when it's today at a set time."""
+    today = now.normalize()
+    next_evt = min(upcoming, key=lambda e: e['date']) if upcoming else None
+    if next_evt is None:
+        return None, None, None
+    next_dt = next_evt['date']
+    days_until = (next_dt.normalize() - today).days
+    hours_until = None
+    if days_until == 0 and not is_all_day_event(next_evt['date'], next_evt['end']):
+        hours_until = (next_dt - now).total_seconds() / 3600
+    return next_dt, days_until, hours_until
+
+
+def seen_dates_of(person_events, now):
+    """Every day a person was seen: all days covered by their past events
+    (a 3-day trip = 3 days), up to today."""
+    today = now.normalize().date()
+    days = set()
+    for evt in person_events:
+        if evt['date'] > now:
+            continue
+        first, last = event_day_span(evt['date'], evt['end'])
+        d = first
+        while d <= min(last, today):
+            days.add(d)
+            d += timedelta(days=1)
+    return days
+
+
+def person_key(entry):
+    """The primary name of a known_people entry, as people goals store it."""
+    return (parse_person_entry(entry)[0] or "").strip()
+
+
 def analyze_time_with_people(df, known_people, exclude_patterns, ignore_partial_names=False,
                              match_calendar_names=False):
     """Analyze time spent with each person."""
@@ -436,6 +495,151 @@ def find_potential_names(df, exclude_patterns, min_occurrences=2):
                  for word, count in word_counts.items() 
                  if count >= min_occurrences}
     return dict(sorted(potential.items(), key=lambda x: x[1]["count"], reverse=True))
+
+KEEP_IN_TOUCH_ICONS = {"overdue": "⚠️", "late": "⚠️", "due_soon": "⏳", "overdue_booked": "🗓️",
+                       "never": "❔", "booked": "🗓️", "on_track": "✅"}
+
+
+def keep_in_touch_label(key, due_in, next_text):
+    """Readable status of `keep_in_touch_status`."""
+    icon = KEEP_IN_TOUCH_ICONS[key]
+    if key == "overdue":
+        return f"{icon} overdue by {-due_in} day{'s' if due_in != -1 else ''}"
+    if key == "overdue_booked":
+        return f"{icon} overdue by {-due_in} day{'s' if due_in != -1 else ''}, booked {next_text}"
+    if key == "late":
+        return f"{icon} next meeting {next_text}, after the due date"
+    if key == "due_soon":
+        return f"{icon} due {'today' if due_in == 0 else 'tomorrow' if due_in == 1 else f'in {due_in} days'}"
+    if key == "booked":
+        return f"{icon} booked {next_text}"
+    if key == "never":
+        return f"{icon} never seen"
+    return f"{icon} on track (due in {due_in} days)"
+
+
+def render_keep_in_touch(df, known_people, exclude_patterns, ignore_partial_names, match_calendar_names):
+    """👥 Keep in touch: who you want to see at least every N days, who's
+    overdue, due soon or booked. Uses all loaded events, not the date range."""
+    st.subheader("👥 Keep in touch")
+    for msg in st.session_state.pop("kit_flash", []):
+        st.success(msg)
+    now = pd.Timestamp.now(tz=df['start'].dt.tz)
+    today = now.normalize().date()
+    _, past_per_person = analyze_time_with_people(
+        df[df['start'] <= now], known_people, exclude_patterns, ignore_partial_names, match_calendar_names)
+    _, upcoming_per_person = analyze_time_with_people(
+        df[df['start'] > now], known_people, exclude_patterns, ignore_partial_names, match_calendar_names)
+
+    goals = st.session_state.settings.get("people_goals", {})
+    goals_by_key = {k.casefold(): v for k, v in goals.items()}
+    people = sorted(known_people, key=lambda e: person_key(e).casefold())
+    info = {}
+    for entry in people:
+        events = past_per_person.get(entry, [])
+        seen = seen_dates_of(events, now)
+        info[entry] = {
+            "last": last_seen_of(events, now),
+            "next": next_of(upcoming_per_person.get(entry, []), now),
+            "seen": seen,
+            "usual": usual_gap_days(seen),
+            # Visits in the last 6 months, for suggesting targets only for
+            # people you currently see regularly.
+            "recent_visits": 1 + len([g for g, end in seen_gaps(seen) if end >= today - timedelta(days=182)])
+            if any(d >= today - timedelta(days=182) for d in seen) else 0,
+        }
+
+    rows = []
+    windows = [today - timedelta(days=d) for d in (91, 182, 365)]  # 3, 6 and 12 months
+    for entry in people:
+        goal = goals_by_key.get(person_key(entry).casefold())
+        if not goal:
+            continue
+        every = int(goal["every_days"])
+        last_dt, days_ago, hours_ago = info[entry]["last"]
+        next_dt, days_until, hours_until = info[entry]["next"]
+        next_text = format_days_until(days_until, hours_until) if next_dt is not None else None
+        key, due_in = keep_in_touch_status(every, days_ago, days_until)
+        counts = [on_time_counts(info[entry]["seen"], every, today, since) for since in windows]
+        usual = info[entry]["usual"]
+        rows.append({
+            "_order": (KEEP_IN_TOUCH_ORDER.index(key), due_in if due_in is not None else 0),
+            "Person": get_display_name(entry).title(),
+            "Target": f"every {every} day{'s' if every != 1 else ''}",
+            "Last seen": format_days_ago(days_ago, hours_ago) if last_dt is not None else "never",
+            "Next": next_text or "—",
+            "Status": keep_in_touch_label(key, due_in, next_text),
+            "On time 3 · 6 · 12 mo": " · ".join(f"{ok}/{n}" if n else "—" for ok, n in counts),
+            "Usually": f"every {usual} days" if usual else "—",
+        })
+
+    if rows:
+        table = pd.DataFrame(sorted(rows, key=lambda r: r["_order"])).drop(columns="_order")
+        overdue = [r["Person"] for r in sorted(rows, key=lambda r: r["_order"]) if r["Status"].startswith("⚠️ overdue")]
+        if overdue:
+            more = f" and {len(overdue) - 8} more" if len(overdue) > 8 else ""
+            st.warning(f"Overdue: {', '.join(overdue[:8])}{more}")
+        st.dataframe(table, use_container_width=True, hide_index=True, column_config={
+            "On time 3 · 6 · 12 mo": st.column_config.TextColumn(
+                "On time 3 · 6 · 12 mo",
+                help="Gaps between visits in the last 3, 6 and 12 months that stayed within the target, "
+                                       "plus the current gap if it's already too long. Consecutive days count "
+                                       "as one visit."),
+            "Usually": st.column_config.TextColumn(
+                "Usually", help="Your median gap between visits so far"),
+        })
+        st.caption("Uses all loaded events of the selected calendars, not just the date range below. "
+                   "Due soon = 75% of the target has passed with nothing booked before the due date.")
+    else:
+        st.caption("No targets yet: open ✏️ Edit targets below to set how often you want to see someone, "
+                   "e.g. every 14 days, and see who's overdue.")
+
+    # --- Edit targets ---
+    version = st.session_state.setdefault("kit_version", 0)
+    draft = st.session_state.setdefault(
+        "kit_draft", {person_key(e): (goals_by_key.get(person_key(e).casefold()) or {}).get("every_days")
+                      for e in people})
+    with st.expander("✏️ Edit targets"):
+        st.caption("At least every how many days you want to see each person. Leave empty for no target.")
+        editor_df = pd.DataFrame([{
+            "Person": person_key(e),
+            "Every (days)": draft.get(person_key(e)),
+            "Usually": f"every {info[e]['usual']} days" if info[e]["usual"] else "—",
+        } for e in people]).astype({"Every (days)": "float"})
+        edited = st.data_editor(
+            editor_df, hide_index=True, use_container_width=True, key=f"kit_editor_{version}",
+            disabled=["Person", "Usually"],
+            column_config={"Every (days)": st.column_config.NumberColumn(
+                "Every (days)", min_value=1, max_value=365, step=1, format="%d")},
+        )
+        c1, c2 = st.columns(2)
+        if c1.button("💡 Suggest from history",
+                     help="Fill empty targets with your usual gap, for people you've seen on at least "
+                          "3 separate visits in the last 6 months"):
+            current = {r["Person"]: (None if pd.isna(r["Every (days)"]) else int(r["Every (days)"]))
+                       for _, r in edited.iterrows()}
+            for e in people:
+                k = person_key(e)
+                if current.get(k) is None and info[e]["usual"] and info[e]["recent_visits"] >= 3:
+                    current[k] = info[e]["usual"]
+            st.session_state.kit_draft = current
+            st.session_state.kit_version = version + 1
+            st.rerun()
+        if c2.button("💾 Save targets", type="primary"):
+            new_goals = {k: v for k, v in goals.items()
+                         if k.casefold() not in {person_key(e).casefold() for e in people}}
+            for _, r in edited.iterrows():
+                if not pd.isna(r["Every (days)"]):
+                    new_goals[r["Person"]] = {"every_days": int(r["Every (days)"])}
+            st.session_state.settings["people_goals"] = new_goals
+            if save_settings(st.session_state.settings):
+                st.session_state.pop("kit_draft", None)
+                st.session_state.kit_version = version + 1
+                count = len([v for k, v in new_goals.items()
+                             if k.casefold() in {person_key(e).casefold() for e in people}])
+                st.session_state.kit_flash = [f"Saved targets for {count} people."]
+                st.rerun()
+
 
 # --- UI Layout ---
 
@@ -652,6 +856,10 @@ if all_events:
         ignore_partial_names = st.session_state.settings.get("ignore_partial_names", True)
         match_calendar_names = st.session_state.settings.get("match_calendar_names", True)
         
+        if known_people:
+            render_keep_in_touch(df, known_people, exclude_patterns, ignore_partial_names, match_calendar_names)
+            st.divider()
+
         # Time Spent with People section
         st.subheader("⏱️ Time Spent with People")
         
@@ -682,29 +890,8 @@ if all_events:
                 for person, hours in sorted(time_per_person.items(), key=lambda x: x[1], reverse=True):
                     event_count = len(events_per_person[person])
                     person_events = events_per_person[person]
-                    # Last seen = last day covered by an event that has already
-                    # started, capped at today (an ongoing multi-day event = today)
-                    past_days = [min(event_day_span(evt['date'], evt['end'])[1], today.date())
-                                 for evt in person_events if evt['date'] <= now]
-                    last_seen_dt = max(past_days) if past_days else None
-                    days_ago = (today.date() - last_seen_dt).days if last_seen_dt is not None else None
-                    # Seen today at a set time: hours since that event ended
-                    # (0 while it's still running). All-day events stay "today".
-                    hours_ago = None
-                    if days_ago == 0:
-                        ends = [min(evt['end'], now) for evt in person_events
-                                if evt['date'] <= now and not is_all_day_event(evt['date'], evt['end'])]
-                        last_end = max(ends) if ends else None
-                        if last_end is not None and last_end.date() == today.date():
-                            hours_ago = (now - last_end).total_seconds() / 3600
-                    # Next = earliest upcoming event
-                    upcoming = upcoming_per_person.get(person, [])
-                    next_evt = min(upcoming, key=lambda e: e['date']) if upcoming else None
-                    next_dt = next_evt['date'] if next_evt is not None else None
-                    days_until = (next_dt.normalize() - today).days if next_dt is not None else None
-                    hours_until = None
-                    if days_until == 0 and not is_all_day_event(next_evt['date'], next_evt['end']):
-                        hours_until = (next_dt - now).total_seconds() / 3600
+                    last_seen_dt, days_ago, hours_ago = last_seen_of(person_events, now)
+                    next_dt, days_until, hours_until = next_of(upcoming_per_person.get(person, []), now)
                     last_seen_by_person[person] = (last_seen_dt, days_ago, hours_ago)
                     next_by_person[person] = (next_dt, days_until, hours_until)
                     # Calculate median duration

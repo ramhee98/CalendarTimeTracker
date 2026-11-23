@@ -14,6 +14,12 @@ Who you spend the most time with, based on event titles.
 
 ## What you see
 
+- **👥 Keep in touch**: how often you want to see each person, e.g. at least every 14 days, and who's due:
+  - **Statuses:** ⚠️ overdue (more than the target since you last met, nothing booked), ⏳ due soon (75% of the target passed, nothing booked before the due date), 🗓️ booked (the next meeting is before the due date), ✅ on track. A meeting booked after the due date, or while already overdue, is flagged too.
+  - **On time 3 · 6 · 12 mo:** how many gaps between visits in the last 3, 6 and 12 months stayed within the target (e.g. `1/2 · 4/6 · 9/12`, "—" without gaps in that window), plus the current gap if it's already too long. Consecutive days, e.g. a trip together, count as one visit.
+  - **Usually:** your median gap between visits.
+  - **✏️ Edit targets:** set every how many days per person. **💡 Suggest from history** fills empty targets with your usual gap, for people you've seen on at least 3 separate visits in the last 6 months. Targets are stored by the person's first name in `social_analysis_settings.json` (`people_goals`), so adding aliases keeps them.
+  - It uses all loaded events of the selected calendars, not just the date range.
 - **Time spent with people**: hours per person.
 - **Statistics per person**: hours, events, average and median hours per event, when you last met and when you meet next (in hours when that is today, e.g. "3h ago" or "in 2h").
 - **Meeting cadence**: the time between consecutive events with each person as a five-number summary (average, min, Q1, median, Q3, max), in hours with days in parentheses.
